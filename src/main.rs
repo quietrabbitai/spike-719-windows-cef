@@ -1,5 +1,0 @@
-#![cfg_attr(windows, windows_subsystem = "windows")]
-
-fn main() {
-    spike719::run();
-}

@@ -38,43 +38,6 @@ jobs:
           path: .cef-cache
           key: cef-151.1.0-windows-x64-v1
 
-      # FINDING (CI round 1): the cef crate downloads the "minimal" distribution, which does NOT contain
-      # cef_sandbox.lib. The Windows sandbox needs it (decisions.id=860), so fetch the "standard"
-      # distribution of the exact same CEF version, verify its SHA-1 from the official index, and extract
-      # only cef_sandbox.lib.
-      - name: Restore cef_sandbox.lib cache
-        id: sbx-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .cef-sandbox
-          key: cef-sandbox-151.3.12-v1
-
-      - name: Fetch cef_sandbox.lib (standard distribution, same CEF version)
-        if: steps.sbx-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $name = "cef_binary_151.3.12+gd9cea67+chromium-151.0.7922.47_windows64.tar.bz2"
-          $url = "https://cef-builds.spotifycdn.com/" + [uri]::EscapeDataString($name)
-          curl.exe -fsSL -o std.tar.bz2 $url
-          $sha1 = (Get-FileHash std.tar.bz2 -Algorithm SHA1).Hash.ToLower()
-          Write-Host "sha1 = $sha1"
-          if ($sha1 -ne "57eeca57bade7855fc9907c699ae8a35fc30e9b7") { throw "standard distribution SHA-1 mismatch" }
-          New-Item -ItemType Directory -Force .cef-sandbox | Out-Null
-          New-Item -ItemType Directory -Force std-extract | Out-Null
-          tar -xjf std.tar.bz2 -C std-extract --wildcards "*/Release/cef_sandbox.lib"
-          $lib = Get-ChildItem std-extract -Recurse -Filter cef_sandbox.lib | Select-Object -First 1
-          if (-not $lib) { throw "cef_sandbox.lib not found in the standard distribution" }
-          Copy-Item $lib.FullName .cef-sandbox\cef_sandbox.lib
-          Get-Item .cef-sandbox\cef_sandbox.lib | Select-Object Name, Length | Format-Table | Out-String | Write-Host
-          Remove-Item std.tar.bz2, std-extract -Recurse -Force
-
-      - name: Save cef_sandbox.lib cache
-        if: steps.sbx-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .cef-sandbox
-          key: cef-sandbox-151.3.12-v1
-
       # cef-dll-sys drives CMake with the Ninja generator, which needs cl.exe on PATH.
       - name: MSVC developer environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -91,8 +54,6 @@ jobs:
           cl 2>&1 | Select-Object -First 1
 
       - name: Build (release)
-        env:
-          CEF_SANDBOX_LIB_DIR: ${{ github.workspace }}\.cef-sandbox
         run: cargo build --release --locked
 
       - name: Save CEF distribution cache
@@ -102,15 +63,20 @@ jobs:
           path: .cef-cache
           key: cef-151.1.0-windows-x64-v1
 
+      # CEF 151's Windows sandbox model: bootstrap.exe (contains the sandbox broker) is renamed to the app
+      # name and loads <app>.dll, calling its RunWinMain export. cef-rs's own bundler does the same copy.
       - name: Package
         shell: pwsh
         run: |
           $rel = "target\release"
           $out = "pkg\spike719"
           New-Item -ItemType Directory -Force $out | Out-Null
-          Get-ChildItem $rel -File | Where-Object { $_.Extension -in ".exe",".dll",".pak",".bin",".dat",".json" } |
-            Where-Object { $_.Name -notlike "build-script-*" } | Copy-Item -Destination $out
+          Get-ChildItem $rel -File | Where-Object { $_.Extension -in ".dll",".pak",".bin",".dat",".json" } | Copy-Item -Destination $out
           if (Test-Path "$rel\locales") { Copy-Item "$rel\locales" "$out\locales" -Recurse }
+          $boot = Get-ChildItem .cef-cache -Recurse -Filter bootstrap.exe | Select-Object -First 1
+          if (-not $boot) { throw "bootstrap.exe not found in the CEF distribution" }
+          Copy-Item $boot.FullName "$out\spike719.exe"
+          if (-not (Test-Path "$out\spike719.dll")) { throw "spike719.dll missing from the build output" }
           Copy-Item README.md, RUN_STEPS.md, RESULTS_TEMPLATE.md $out
           Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize | Out-String | Write-Host
           Compress-Archive -Path "$out\*" -DestinationPath "pkg\spike719-windows-x64.zip"

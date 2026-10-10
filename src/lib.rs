@@ -8,19 +8,25 @@ pub mod spikelog;
 pub mod host;
 #[cfg(windows)]
 pub mod winenv;
+
+/// Entry point called by CEF's bootstrap.exe (the renamed spike719.exe) after it has created the Chromium
+/// sandbox: this DLL is the client. The same exe/DLL pair is re-launched for every CEF helper process.
+/// Signature per CEF's include/cef_sandbox_win.h.
 #[cfg(windows)]
-pub mod winsandbox;
+#[no_mangle]
+pub extern "C" fn RunWinMain(
+    _hinstance: *mut std::ffi::c_void,
+    _cmd_line: *mut u16,
+    _n_cmd_show: i32,
+    sandbox_info: *mut std::ffi::c_void,
+    _version_info: *mut std::ffi::c_void,
+) -> i32 {
+    run(sandbox_info as *mut u8);
+    0
+}
 
 #[cfg(windows)]
-pub fn run() {
-    // The sandbox info must exist before anything else touches the process (cef_sandbox_win.h), and the same
-    // exe serves as browser and helper processes, so this runs on every launch.
-    let diag = std::env::args().any(|a| a == "--diag-no-sandbox");
-    let sandbox = if diag {
-        std::ptr::null_mut()
-    } else {
-        winsandbox::create()
-    };
+fn run(sandbox: *mut u8) {
     if cefapp::dispatch_subprocess(sandbox) {
         return;
     }
@@ -30,15 +36,12 @@ pub fn run() {
     };
     spikelog::init(&parsed.profile);
     log::info!("spike719 starting: {parsed:?}");
-    if sandbox.is_null() && !diag {
+    if sandbox.is_null() && !parsed.diag_no_sandbox {
         // decisions.id=860: fail closed, no silent downgrade.
-        host::fatal("Chromium sandbox could not be created; refusing to run unsandboxed");
+        host::fatal(
+            "Chromium sandbox info was not provided by bootstrap.exe; refusing to run unsandboxed",
+        );
     }
     cli::init(parsed.clone());
     host::run(parsed, sandbox);
-}
-
-#[cfg(not(windows))]
-pub fn run() {
-    eprintln!("spike719 is a Windows-only test bed");
 }

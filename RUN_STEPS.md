@@ -6,6 +6,7 @@ Approach A. Modes `b-*` are not built yet (they exit with a message).
 ## Rules
 - Run on the PC itself, on a monitor. **Never over Remote Desktop** (it changes compositing).
 - Use **throwaway test accounts** for Claude, ChatGPT and especially Google. Do not log in with a real account.
+- `spike719.exe` is CEF's own `bootstrap.exe` (it creates the Chromium sandbox, then loads `spike719.dll`); keep both together.
 - No installer, no system changes. The exe is unsigned: SmartScreen/Defender may warn. Run from the unzipped folder.
 - At the end: delete `%TEMP%\qr-spike-719\` and sign out of every test account (they are only inside that folder, so
   deleting it signs them out locally; also sign out on the provider side if you want to be thorough).

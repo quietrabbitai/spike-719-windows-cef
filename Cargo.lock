@@ -3222,7 +3222,6 @@ name = "spike719"
 version = "0.0.1"
 dependencies = [
  "cef",
- "cef-dll-sys",
  "log",
  "serde",
  "serde_json",

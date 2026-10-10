@@ -6,13 +6,14 @@ edition = "2021"
 publish = false
 build = "build.rs"
 
+# FINDING (CI rounds 1-2): CEF 151's Windows sandbox is the bootstrap model. The distribution has no
+# cef_sandbox.lib; instead CEF's bootstrap.exe (which contains the sandbox broker) is renamed to the app
+# name and loads <app>.dll, calling its exported RunWinMain(). So the application is a cdylib, and
+# cef-rs's own bundler (build_util/win, `sandbox` feature) does exactly this copy.
 [lib]
 name = "spike719"
 path = "src/lib.rs"
-
-[[bin]]
-name = "spike719"
-path = "src/main.rs"
+crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -23,10 +24,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 # Same pins as quietrabbit-core. `sandbox` makes cef-dll-sys build libcef_dll_wrapper with USE_SANDBOX
-# (decisions.id=860: the Chromium sandbox stays enabled). cef-dll-sys is a direct dependency only so
-# build.rs can read DEP_CEF_DLL_WRAPPER_CEF_DIR (to find cef_sandbox.lib).
+# (decisions.id=860: the Chromium sandbox stays enabled).
 cef = { version = "151.1.0", features = ["sandbox"] }
-cef-dll-sys = { version = "151.1.0", features = ["sandbox"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
