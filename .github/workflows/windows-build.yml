@@ -1,0 +1,79 @@
+# THROWAWAY SPIKE (items.id=719). Builds the Windows test binary on a GitHub-hosted runner and uploads it
+# as a workflow artifact. Nothing here signs, publishes, releases or contacts anything beyond GitHub itself
+# and the CEF build index (cef-builds.spotifycdn.com, what the cef crate's own build script downloads from).
+name: windows-build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CEF_PATH: ${{ github.workspace }}\.cef-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same pin as quietrabbit-core's rust-toolchain.toml.
+      - name: Install Rust 1.97.1
+        uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # The cef-dll-sys build script downloads ~hundreds of MB of CEF; cache it between runs.
+      - name: Cache CEF distribution
+        uses: actions/cache@v4
+        with:
+          path: .cef-cache
+          key: cef-151.1.0-windows-x64-v1
+
+      # cef-dll-sys drives CMake with the Ninja generator, which needs cl.exe on PATH.
+      - name: MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Tool versions
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          cmake --version
+          ninja --version
+          cl 2>&1 | Select-Object -First 1
+
+      - name: Build (release)
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $rel = "target\release"
+          $out = "pkg\spike719"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Get-ChildItem $rel -File | Where-Object { $_.Extension -in ".exe",".dll",".pak",".bin",".dat",".json" } |
+            Where-Object { $_.Name -notlike "build-script-*" } | Copy-Item -Destination $out
+          if (Test-Path "$rel\locales") { Copy-Item "$rel\locales" "$out\locales" -Recurse }
+          Copy-Item README.md, RUN_STEPS.md, RESULTS_TEMPLATE.md $out
+          Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize | Out-String | Write-Host
+          Compress-Archive -Path "$out\*" -DestinationPath "pkg\spike719-windows-x64.zip"
+          $h = (Get-FileHash "pkg\spike719-windows-x64.zip" -Algorithm SHA256).Hash
+          Write-Host "SHA256 spike719-windows-x64.zip = $h"
+          "SHA256=$h" | Out-File -Encoding ascii "pkg\SHA256.txt"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike719-windows-x64
+          path: |
+            pkg/spike719-windows-x64.zip
+            pkg/SHA256.txt
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spike 719</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; font: 14px system-ui, sans-serif; color: #1c1c1c; }
+  body { position: relative; overflow: hidden; }
+  /* The window background behind the panes (visible only where no pane covers it). */
+  #bg { position: absolute; inset: 0; background: #dfe6ee; z-index: -1; }
+  #bar { position: absolute; left: 0; right: 0; top: 0; height: 52px; display: flex; gap: 8px; align-items: center;
+         padding: 0 12px; background: #2b3a4a; color: #fff; box-sizing: border-box; }
+  #bar button, #bar select { font: inherit; padding: 5px 10px; }
+  #rail { position: absolute; left: 0; top: 52px; bottom: 0; width: 46px; background: #3b4d61; display: flex;
+          flex-direction: column; align-items: center; gap: 10px; padding-top: 10px; }
+  .railbtn { width: 30px; height: 30px; border-radius: 6px; background: #5d7791; position: relative; }
+  .railbtn:hover .tip { display: block; }
+  .tip { display: none; position: absolute; left: 38px; top: 2px; white-space: nowrap; background: #111; color: #fff;
+         padding: 4px 8px; border-radius: 4px; z-index: 5; }
+  .slot { position: absolute; border: 2px dashed #7a8ea3; box-sizing: border-box; display: flex; align-items: center;
+          justify-content: center; color: #55697d; }
+  #s0 { left: 6%; top: 14%; width: 44%; height: 84%; }
+  #s1 { left: 52%; top: 14%; width: 46%; height: 84%; }
+  #menu { display: none; position: absolute; top: 52px; left: 160px; width: 260px; height: 220px; background: #fff;
+          border: 1px solid #889; box-shadow: 0 4px 16px #0006; z-index: 10; padding: 8px; box-sizing: border-box; }
+  #scrim { display: none; position: absolute; inset: 0; background: #0005; z-index: 20; }
+  #dlg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 420px; background: #fff;
+         padding: 18px; border-radius: 8px; box-shadow: 0 8px 32px #0008; }
+  #banner { position: absolute; left: 56px; top: 56px; font-size: 12px; color: #334; z-index: 1; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<div id="bar">
+  <strong>Spike 719</strong>
+  <button id="bModal">Open modal (Privacy Guardian stand-in)</button>
+  <button id="bMenu">Menu</button>
+  <label>Pane 1 <select id="nav0"><option value="local">local page</option><option>https://claude.ai/</option><option>https://chatgpt.com/</option><option>https://gemini.google.com/</option></select></label>
+  <label>Pane 2 <select id="nav1"><option value="local">local page</option><option>https://claude.ai/</option><option>https://chatgpt.com/</option><option>https://gemini.google.com/</option></select></label>
+  <label>Mark <select id="marks"></select></label><button id="bMark">Log mark</button>
+</div>
+<div id="rail"><div class="railbtn"><span class="tip">Rail tooltip (HTML, must draw above a pane)</span></div><div class="railbtn"></div></div>
+<div id="banner">loading…</div>
+<div class="slot" id="s0">pane 1 slot</div>
+<div class="slot" id="s1">pane 2 slot</div>
+<div id="menu">HTML menu / dropdown that overlaps the pane area.<br><br>Item one<br>Item two<br>Item three<br>Item four</div>
+<div id="scrim"><div id="dlg"><h3>Privacy Guardian review (stand-in)</h3><p>This HTML modal must draw above both panes with no seam and without hiding them.</p><button id="bClose">Close</button></div></div>
+<script>
+const { invoke } = window.__TAURI__.core;
+const $ = (id) => document.getElementById(id);
+const frac = (el) => { const r = el.getBoundingClientRect();
+  return { x: r.left / innerWidth, y: r.top / innerHeight, w: r.width / innerWidth, h: r.height / innerHeight }; };
+const report = () => invoke('set_layout', { panes: [frac($('s0')), frac($('s1'))] }).catch(() => {});
+new ResizeObserver(report).observe(document.body);
+addEventListener('resize', report);
+report();
+
+const marks = ['start: move window', 'start: resize', 'start: maximize', 'start: snap', 'start: DPI change', 'start: scroll test',
+  'start: modal test', 'start: login test', 'start: popup test', 'start: IME test', 'start: copy/paste', 'start: soak', 'end: soak'];
+for (const m of marks) { const o = document.createElement('option'); o.textContent = m; $('marks').appendChild(o); }
+$('bMark').onclick = () => invoke('mark', { label: $('marks').value });
+
+let info = null;
+invoke('info').then((i) => { info = i;
+  $('banner').textContent = `mode=${i.mode} sandbox=${i.sandbox} local=127.0.0.1:${i.port} profile=${i.profile}`; });
+for (const n of [0, 1]) $('nav' + n).onchange = (e) => {
+  const v = e.target.value === 'local' ? `http://127.0.0.1:${info.port}/?pane=${n}` : e.target.value;
+  invoke('navigate_pane', { pane: n, url: v }).catch((x) => alert(x));
+};
+
+const showOverlay = (el, rectEl) => { el.style.display = 'block'; invoke('set_modal', { open: true, rect: frac(rectEl) }); };
+const hideOverlay = (el) => { el.style.display = 'none'; invoke('set_modal', { open: false, rect: null }); };
+$('bModal').onclick = () => showOverlay($('scrim'), $('dlg'));
+$('bClose').onclick = () => hideOverlay($('scrim'));
+$('bMenu').onclick = () => { const m = $('menu');
+  if (m.style.display === 'block') hideOverlay(m); else showOverlay(m, m); };
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# THROWAWAY SPIKE (items.id=719). Never merged into quietrabbit-core. Delete at closure.
+[package]
+name = "spike719"
+version = "0.0.1"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "spike719"
+path = "src/lib.rs"
+
+[[bin]]
+name = "spike719"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+# Same pins as quietrabbit-core. `sandbox` makes cef-dll-sys build libcef_dll_wrapper with USE_SANDBOX
+# (decisions.id=860: the Chromium sandbox stays enabled). cef-dll-sys is a direct dependency only so
+# build.rs can read DEP_CEF_DLL_WRAPPER_CEF_DIR (to find cef_sandbox.lib).
+cef = { version = "151.1.0", features = ["sandbox"] }
+cef-dll-sys = { version = "151.1.0", features = ["sandbox"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+debug = "line-tables-only"

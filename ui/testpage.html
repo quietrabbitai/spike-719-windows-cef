@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>spike 719 test page</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; padding: 10px; background: #fff; color: #111; }
+  h4 { margin: 14px 0 4px; } .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  pre { background: #f3f3f3; padding: 6px; margin: 4px 0; white-space: pre-wrap; }
+  #spin { width: 40px; height: 40px; background: #36c; animation: r 1.2s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  #scroll { height: 140px; overflow: auto; border: 1px solid #999; }
+  #ctx { height: 40px; border: 1px dashed #666; display: flex; align-items: center; justify-content: center; }
+</style></head><body>
+<div><b>pane</b> <span id="pane"></span> | <b>origin</b> <span id="origin"></span></div>
+
+<h4>Frame pacing (page-side requestAnimationFrame)</h4>
+<div class="row"><div id="spin"></div><pre id="fps">…</pre><button id="fpsReset">reset</button></div>
+
+<h4>GPU / WebGL (hardware WebGL matters for Cloudflare Turnstile, items.id=327)</h4>
+<pre id="gl">…</pre>
+
+<h4>Cookie isolation (both panes load THIS origin; the jars must differ)</h4>
+<div class="row"><button id="setc">set cookie = this pane</button><button id="showc">show cookies</button></div><pre id="cookies">…</pre>
+
+<h4>Keyboard / IME / selection / dropdown</h4>
+<div class="row"><input id="txt" placeholder="type here (IME)" size="22"><textarea rows="2" cols="22" placeholder="textarea"></textarea>
+<div contenteditable style="border:1px solid #999;min-width:120px;padding:2px">contenteditable</div>
+<select id="sel"><option>option one</option><option>option two</option><option>option three</option><option>option four</option></select></div>
+<pre id="keys">key events…</pre>
+
+<h4>Copy / paste / context menu</h4>
+<div class="row"><span id="sample">Select this sentence and copy it with Ctrl+C or the right-click menu.</span></div>
+<div id="ctx">right-click here (contextmenu event logged)</div><pre id="ctxlog"></pre>
+
+<h4>Popups / OAuth-style window.open</h4>
+<div class="row"><button id="pop">window.open('/popup')</button><button id="pop2">window.open with features</button></div><pre id="poplog"></pre>
+
+<h4>Scroll smoothness</h4>
+<div id="scroll"></div>
+
+<script>
+const q = new URLSearchParams(location.search);
+document.getElementById('pane').textContent = q.get('pane') ?? '?';
+document.getElementById('origin').textContent = location.origin;
+const $ = (id) => document.getElementById(id);
+
+// rAF interval statistics
+let last = performance.now(), iv = [];
+function tick(t) { iv.push(t - last); last = t; if (iv.length > 600) iv.shift(); requestAnimationFrame(tick); }
+requestAnimationFrame(tick);
+function showFps() {
+  if (iv.length < 10) return;
+  const s = [...iv].sort((a, b) => a - b), avg = iv.reduce((a, b) => a + b, 0) / iv.length;
+  $('fps').textContent = `avg ${avg.toFixed(2)} ms (${(1000 / avg).toFixed(1)} fps) | p95 ${s[Math.floor(s.length * .95)].toFixed(1)} | p99 ${s[Math.floor(s.length * .99)].toFixed(1)} | max ${s[s.length - 1].toFixed(1)} ms | n=${iv.length}`;
+}
+setInterval(showFps, 500);
+$('fpsReset').onclick = () => { iv = []; };
+
+try {
+  const c = document.createElement('canvas'), gl = c.getContext('webgl');
+  const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+  $('gl').textContent = gl ? `WebGL ok | renderer: ${ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)}` : 'WebGL UNAVAILABLE';
+} catch (e) { $('gl').textContent = 'WebGL error ' + e; }
+
+$('setc').onclick = () => { document.cookie = `spike_cookie=pane${q.get('pane')}_${Math.random().toString(36).slice(2, 7)}; max-age=86400; path=/`; $('showc').click(); };
+$('showc').onclick = () => { $('cookies').textContent = document.cookie || '(no cookies)'; };
+$('showc').click();
+
+for (const ev of ['keydown', 'compositionstart', 'compositionupdate', 'compositionend']) {
+  $('txt').addEventListener(ev, (e) => { $('keys').textContent = `${ev}: key=${e.key ?? ''} data=${e.data ?? ''}\n` + $('keys').textContent.slice(0, 400); });
+}
+$('ctx').addEventListener('contextmenu', (e) => { $('ctxlog').textContent = `contextmenu at ${e.clientX},${e.clientY}\n` + $('ctxlog').textContent.slice(0, 300); });
+document.addEventListener('copy', () => { $('ctxlog').textContent = 'copy event fired\n' + $('ctxlog').textContent.slice(0, 300); });
+
+$('pop').onclick = () => { const w = window.open('/popup?x=1'); $('poplog').textContent = 'window.open returned ' + (w ? 'a window' : 'null') + '\n' + $('poplog').textContent; };
+$('pop2').onclick = () => { const w = window.open('/popup?x=2', 'oauth', 'width=480,height=640'); $('poplog').textContent = 'window.open(features) returned ' + (w ? 'a window' : 'null') + '\n' + $('poplog').textContent; };
+addEventListener('message', (e) => { $('poplog').textContent = 'message: ' + e.data + '\n' + $('poplog').textContent; });
+
+for (let i = 0; i < 400; i++) { const d = document.createElement('div'); d.textContent = `scroll line ${i} — the quick brown fox jumps over the lazy dog`; $('scroll').appendChild(d); }
+</script></body></html>
