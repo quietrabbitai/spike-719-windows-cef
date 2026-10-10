@@ -26,13 +26,54 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
-      # The cef-dll-sys build script downloads ~hundreds of MB of CEF; cache it between runs.
-      - name: Cache CEF distribution
-        uses: actions/cache@v4
+      # The cef-dll-sys build script downloads the "minimal" CEF distribution (~170 MB); cache it between
+      # runs. Saved even when the build fails, so a failed round does not cost the download again.
+      - name: Restore CEF distribution cache
+        id: cef-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cef-cache
           key: cef-151.1.0-windows-x64-v1
+
+      # FINDING (CI round 1): the cef crate downloads the "minimal" distribution, which does NOT contain
+      # cef_sandbox.lib. The Windows sandbox needs it (decisions.id=860), so fetch the "standard"
+      # distribution of the exact same CEF version, verify its SHA-1 from the official index, and extract
+      # only cef_sandbox.lib.
+      - name: Restore cef_sandbox.lib cache
+        id: sbx-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cef-sandbox
+          key: cef-sandbox-151.3.12-v1
+
+      - name: Fetch cef_sandbox.lib (standard distribution, same CEF version)
+        if: steps.sbx-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $name = "cef_binary_151.3.12+gd9cea67+chromium-151.0.7922.47_windows64.tar.bz2"
+          $url = "https://cef-builds.spotifycdn.com/" + [uri]::EscapeDataString($name)
+          curl.exe -fsSL -o std.tar.bz2 $url
+          $sha1 = (Get-FileHash std.tar.bz2 -Algorithm SHA1).Hash.ToLower()
+          Write-Host "sha1 = $sha1"
+          if ($sha1 -ne "57eeca57bade7855fc9907c699ae8a35fc30e9b7") { throw "standard distribution SHA-1 mismatch" }
+          New-Item -ItemType Directory -Force .cef-sandbox | Out-Null
+          New-Item -ItemType Directory -Force std-extract | Out-Null
+          tar -xjf std.tar.bz2 -C std-extract --wildcards "*/Release/cef_sandbox.lib"
+          $lib = Get-ChildItem std-extract -Recurse -Filter cef_sandbox.lib | Select-Object -First 1
+          if (-not $lib) { throw "cef_sandbox.lib not found in the standard distribution" }
+          Copy-Item $lib.FullName .cef-sandbox\cef_sandbox.lib
+          Get-Item .cef-sandbox\cef_sandbox.lib | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+          Remove-Item std.tar.bz2, std-extract -Recurse -Force
+
+      - name: Save cef_sandbox.lib cache
+        if: steps.sbx-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cef-sandbox
+          key: cef-sandbox-151.3.12-v1
 
       # cef-dll-sys drives CMake with the Ninja generator, which needs cl.exe on PATH.
       - name: MSVC developer environment
@@ -50,7 +91,16 @@ jobs:
           cl 2>&1 | Select-Object -First 1
 
       - name: Build (release)
+        env:
+          CEF_SANDBOX_LIB_DIR: ${{ github.workspace }}\.cef-sandbox
         run: cargo build --release --locked
+
+      - name: Save CEF distribution cache
+        if: always() && steps.cef-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cef-cache
+          key: cef-151.1.0-windows-x64-v1
 
       - name: Package
         shell: pwsh
