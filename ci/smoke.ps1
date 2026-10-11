@@ -30,7 +30,17 @@ function Shot($file) {
     $bmp.Save($file, [System.Drawing.Imaging.ImageFormat]::Png)
   } catch { "screenshot failed: $_" | Add-Content $notes }
 }
-function Move($x, $y) { [W]::SetCursorPos([int]$x, [int]$y) | Out-Null; Start-Sleep -Milliseconds 300 }
+# SetCursorPos does not move the cursor in the runner's session (clicks landed at screen centre), so use absolute
+# mouse_event moves (0x8001 = MOVE|ABSOLUTE, coordinates normalised to 0..65535), plus a 1px jiggle for hover.
+function Move($x, $y) {
+  $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+  $nx = [int](([double]$x * 65535.0) / ($b.Width - 1)); $ny = [int](([double]$y * 65535.0) / ($b.Height - 1))
+  [W]::mouse_event(0x8001, [uint32]$nx, [uint32]$ny, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 150
+  [W]::mouse_event(0x8001, [uint32]([Math]::Min(65535, $nx + 40)), [uint32]$ny, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 100
+  [W]::mouse_event(0x8001, [uint32]$nx, [uint32]$ny, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 300
+  $pos = [System.Windows.Forms.Cursor]::Position
+  "move -> wanted $([int]$x),$([int]$y) got $($pos.X),$($pos.Y)" | Add-Content $notes
+}
 function Click($x, $y, [string]$btn = "left") {
   Move $x $y
   if ($btn -eq "left") { [W]::mouse_event(0x2,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x4,0,0,0,[UIntPtr]::Zero) }
@@ -69,7 +79,7 @@ if ($rects -and $h -ne [IntPtr]::Zero) {
   Move ($o.X + $rects.tip.x + $rects.tip.w/2) ($o.Y + $rects.tip.y + $rects.tip.h/2); Start-Sleep -Seconds 2
   Shot (Join-Path $dir "5-tooltip.png")
   # 2. click the first input in pane 0 and type
-  Click ($o.X + $rects.s0.x + 60) ($o.Y + $rects.s0.y + 50)
+  Click ($o.X + $rects.s0.x + 60) ($o.Y + $rects.s0.y + 42)
   [System.Windows.Forms.SendKeys]::SendWait("hello 123"); Start-Sleep -Seconds 1
   Shot (Join-Path $dir "6-typed.png")
   # 3. select a word in pane 0 and open the context menu on it
