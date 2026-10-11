@@ -415,15 +415,43 @@ pub fn mouse_move(slot: usize, x: i32, y: i32, leave: bool, mods: u32) {
     }
 }
 
+/// Last button-down, for click counting. DOM PointerEvents carry no click count and the native path only sees
+/// separate WM_*BUTTONDOWN messages, so double/triple clicks (word/line selection) are counted here for both.
+type LastDown = Option<(Instant, usize, i32, i32, u32, i32)>;
+static LAST_DOWN: std::sync::Mutex<LastDown> = std::sync::Mutex::new(None);
+
 pub fn mouse_click(
     slot: usize,
     x: i32,
     y: i32,
     button: MouseButtonType,
     up: bool,
-    count: i32,
+    _count: i32,
     mods: u32,
 ) {
+    let b = button.get_raw() as u32;
+    let count = if let Ok(mut last) = LAST_DOWN.lock() {
+        if !up {
+            let c = match *last {
+                Some((t, s, lx, ly, lb, lc))
+                    if s == slot
+                        && lb == b
+                        && t.elapsed().as_millis() <= 500
+                        && (lx - x).abs() <= 4
+                        && (ly - y).abs() <= 4 =>
+                {
+                    (lc % 3) + 1
+                }
+                _ => 1,
+            };
+            *last = Some((Instant::now(), slot, x, y, b, c));
+            c
+        } else {
+            last.map(|l| l.5).unwrap_or(1)
+        }
+    } else {
+        1
+    };
     if let Some(h) = host(slot) {
         h.send_mouse_click_event(
             Some(&MouseEvent {
