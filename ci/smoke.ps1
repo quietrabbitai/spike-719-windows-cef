@@ -32,7 +32,7 @@ function Shot($file) {
 }
 # SetCursorPos does not move the cursor in the runner's session (clicks landed at screen centre), so use absolute
 # mouse_event moves (0x8001 = MOVE|ABSOLUTE, coordinates normalised to 0..65535), plus a 1px jiggle for hover.
-function Move($x, $y) {
+function MoveMouse($x, $y) {
   $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
   $nx = [int](([double]$x * 65535.0) / ($b.Width - 1)); $ny = [int](([double]$y * 65535.0) / ($b.Height - 1))
   [W]::mouse_event(0x8001, [uint32]$nx, [uint32]$ny, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 150
@@ -42,7 +42,7 @@ function Move($x, $y) {
   "move -> wanted $([int]$x),$([int]$y) got $($pos.X),$($pos.Y)" | Add-Content $notes
 }
 function Click($x, $y, [string]$btn = "left") {
-  Move $x $y
+  MoveMouse $x $y
   if ($btn -eq "left") { [W]::mouse_event(0x2,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x4,0,0,0,[UIntPtr]::Zero) }
   else { [W]::mouse_event(0x8,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x10,0,0,0,[UIntPtr]::Zero) }
   Start-Sleep -Milliseconds 400
@@ -76,7 +76,7 @@ if ($rects -and $h -ne [IntPtr]::Zero) {
   "client origin on screen: $($o.X),$($o.Y)  rects: $json" | Add-Content $notes
   $cx = { param($r, $dx, $dy) $o.X + $r.x + $dx }
   # 1. tooltip hanging off a toolbar button over the panes
-  Move ($o.X + $rects.tip.x + $rects.tip.w/2) ($o.Y + $rects.tip.y + $rects.tip.h/2); Start-Sleep -Seconds 2
+  MoveMouse ($o.X + $rects.tip.x + $rects.tip.w/2) ($o.Y + $rects.tip.y + $rects.tip.h/2); Start-Sleep -Seconds 2
   Shot (Join-Path $dir "5-tooltip.png")
   # 2. click the first input in pane 0 and type
   Click ($o.X + $rects.s0.x + 60) ($o.Y + $rects.s0.y + 42)
@@ -88,7 +88,7 @@ if ($rects -and $h -ne [IntPtr]::Zero) {
   Shot (Join-Path $dir "7-contextmenu.png")
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}"); Start-Sleep -Milliseconds 500
   # 4. wheel scroll inside pane 1
-  Move ($o.X + $rects.s1.x + $rects.s1.w/2) ($o.Y + $rects.s1.y + $rects.s1.h/2)
+  MoveMouse ($o.X + $rects.s1.x + $rects.s1.w/2) ($o.Y + $rects.s1.y + $rects.s1.h/2)
   [W]::mouse_event(0x800,0,0,-360,[UIntPtr]::Zero); Start-Sleep -Milliseconds 300
   [W]::mouse_event(0x800,0,0,-360,[UIntPtr]::Zero); Start-Sleep -Seconds 1
   Shot (Join-Path $dir "8-scrolled.png")
