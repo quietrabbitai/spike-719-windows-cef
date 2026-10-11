@@ -166,9 +166,8 @@ pub fn parse() -> Result<Cli, String> {
             _ => {}
         }
     }
-    // Linux ships the Chrome runtime style for windowless panes (window_info default); mirror it unless told.
-    if !runtime_set && cli.mode.windowless() {
-        cli.runtime = Runtime::Chrome;
-    }
+    // CI smoke finding: explicitly requesting the Chrome runtime style for a windowless browser makes CEF 151 log
+    // "Chrome style is not supported for this browser" and fall back, so Alloy is the honest default for B too.
+    let _ = runtime_set;
     Ok(cli)
 }

@@ -160,6 +160,8 @@ invoke('info').then((i) => {
   updateHoles();
   if (i.selftest) {
     // CI smoke run: drive the overlay buttons on a timer so screenshots can capture them. Not used on the PC.
+    const r = (id) => { const b = $(id).getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; };
+    setTimeout(() => invoke('mark', { label: 'rects:' + JSON.stringify({ tip: r('bTip'), s0: r('s0'), s1: r('s1'), railTip2: r('rail') }) }), 3000);
     const step = (ms, fn) => setTimeout(fn, ms);
     step(12000, () => $('bModal').click());
     step(16000, () => $('bClose').click());
