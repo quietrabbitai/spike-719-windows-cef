@@ -255,6 +255,10 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
             winenv::write_env_json(&sh_setup.profile, cli, sandbox, port);
 
             let root_cache = sh_setup.profile.join("cef");
+            // Hypothesis from the first run's log (init failed on every first start after the profile folder was
+            // deleted, then succeeded on the next start): create the cache dirs up front.
+            let _ = std::fs::create_dir_all(&root_cache);
+            let _ = std::fs::create_dir_all(sh_setup.profile.join("webview2"));
             if !cefapp::initialize(cli, &root_cache, sandbox_addr as *mut u8) {
                 let code = cef::get_exit_code();
                 let meaning = match code {
