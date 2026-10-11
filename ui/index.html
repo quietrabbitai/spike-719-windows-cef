@@ -75,11 +75,30 @@ let info = null, popRect = null;
 // ---- hole in the opaque window background (below placement only)
 function updateHoles() {
   if (!info || !info.below) return;
-  const rects = [$('s0'), $('s1')].map((e) => e.getBoundingClientRect());
-  if (popRect) rects.push({ left: popRect.x, top: popRect.y, width: popRect.w, height: popRect.h });
-  let d = `M0 0H${innerWidth}V${innerHeight}H0Z`;
-  for (const r of rects) d += ` M${r.left} ${r.top}h${r.width}v${r.height}h${-r.width}Z`;
-  $('bg').style.clipPath = `path(evenodd, '${d}')`;
+  const holes = [$('s0'), $('s1')].map((e) => e.getBoundingClientRect());
+  if (popRect) holes.push({ left: popRect.x, top: popRect.y, right: popRect.x + popRect.w, bottom: popRect.y + popRect.h });
+  const H = holes.map((r) => ({ l: r.left, t: r.top, r: r.right ?? r.left + r.width, b: r.bottom ?? r.top + r.height }));
+  // Complement of the UNION of the holes, as non-overlapping opaque cells (clip-path evenodd would re-fill overlaps).
+  const xs = [...new Set([0, innerWidth, ...H.flatMap((h) => [h.l, h.r])])].filter((v) => v >= 0 && v <= innerWidth).sort((p, q) => p - q);
+  const ys = [...new Set([0, innerHeight, ...H.flatMap((h) => [h.t, h.b])])].filter((v) => v >= 0 && v <= innerHeight).sort((p, q) => p - q);
+  const bg = $('bg');
+  bg.textContent = '';
+  bg.style.background = 'none';
+  for (let j = 0; j + 1 < ys.length; j++) {
+    let runStart = null;
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
+      const inHole = H.some((h) => cx > h.l && cx < h.r && cy > h.t && cy < h.b);
+      if (!inHole && runStart === null) runStart = xs[i];
+      if ((inHole || i + 2 === xs.length) && runStart !== null) {
+        const end = inHole ? xs[i] : xs[i + 1];
+        const d = document.createElement('div');
+        d.style.cssText = `position:absolute;left:${runStart}px;top:${ys[j]}px;width:${end - runStart}px;height:${ys[j + 1] - ys[j]}px;background:#dfe6ee`;
+        bg.appendChild(d);
+        runStart = null;
+      }
+    }
+  }
 }
 
 const report = () => { invoke('set_layout', { panes: [frac($('s0')), frac($('s1'))] }).catch(() => {}); updateHoles(); };

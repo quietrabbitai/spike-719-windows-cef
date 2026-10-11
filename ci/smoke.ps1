@@ -43,8 +43,8 @@ function MoveMouse($x, $y) {
 }
 function Click($x, $y, [string]$btn = "left") {
   MoveMouse $x $y
-  if ($btn -eq "left") { [W]::mouse_event(0x2,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x4,0,0,0,[UIntPtr]::Zero) }
-  else { [W]::mouse_event(0x8,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x10,0,0,0,[UIntPtr]::Zero) }
+  if ($btn -eq "left") { [W]::mouse_event(0x2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [W]::mouse_event(0x4,0,0,0,[UIntPtr]::Zero) }
+  else { [W]::mouse_event(0x8,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [W]::mouse_event(0x10,0,0,0,[UIntPtr]::Zero) }
   Start-Sleep -Milliseconds 400
 }
 # Move once, then two quick clicks (the move helper takes ~0.5 s, which exceeds the 500 ms double-click window).
@@ -92,9 +92,9 @@ if ($rects -and $h -ne [IntPtr]::Zero) {
   Click ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 82) "right"; Start-Sleep -Seconds 1
   Shot (Join-Path $dir "7-contextmenu.png")
   # choose "Copy" (first item, just below-right of the click point) and read the clipboard back
-  [System.Windows.Forms.Clipboard]::Clear()
+  Set-Clipboard -Value "<empty>"
   Click ($o.X + $rects.s0.x + 70 + 30) ($o.Y + $rects.s0.y + 82 + 12); Start-Sleep -Seconds 1
-  try { "clipboard after context-menu Copy: [$([System.Windows.Forms.Clipboard]::GetText())]" | Add-Content $notes } catch { "clipboard read failed: $_" | Add-Content $notes }
+  try { "clipboard after context-menu Copy: [$(Get-Clipboard -Raw)]" | Add-Content $notes } catch { "clipboard read failed: $_" | Add-Content $notes }
   Shot (Join-Path $dir "7b-after-copy.png")
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}"); Start-Sleep -Milliseconds 500
   # 4. wheel scroll inside pane 1
