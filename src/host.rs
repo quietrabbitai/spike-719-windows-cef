@@ -256,7 +256,16 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
 
             let root_cache = sh_setup.profile.join("cef");
             if !cefapp::initialize(cli, &root_cache, sandbox_addr as *mut u8) {
-                fatal("cef::initialize failed");
+                let code = cef::get_exit_code();
+                let meaning = match code {
+                    21 => "PROFILE_IN_USE: another process holds the profile folder",
+                    24 => "NORMAL_EXIT_PROCESS_NOTIFIED: handed over to an already-running instance",
+                    _ => "see cef_resultcode_t",
+                };
+                let others = winenv::other_instances();
+                fatal(&format!(
+                    "cef::initialize failed: exit code {code} ({meaning}). Other spike719.exe processes (pid:parent): {others}"
+                ));
             }
             if cli.cef_loop == CefLoop::Pump {
                 // Pump CEF from the Tauri main thread (same thread as the parent window).

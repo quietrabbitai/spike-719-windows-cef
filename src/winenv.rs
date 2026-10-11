@@ -348,3 +348,18 @@ pub fn start_sampler(profile: PathBuf) {
         }
     });
 }
+
+/// Other processes with our exe name (pid:parent), excluding this one. Used only to explain an init failure.
+pub fn other_instances() -> String {
+    let me = std::process::id();
+    let list: Vec<String> = snapshot()
+        .iter()
+        .filter(|p| p.exe.eq_ignore_ascii_case("spike719.exe") && p.pid != me)
+        .map(|p| format!("{}:{}", p.pid, p.ppid))
+        .collect();
+    if list.is_empty() {
+        "none".into()
+    } else {
+        list.join(", ")
+    }
+}
