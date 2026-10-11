@@ -119,7 +119,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force pkg | Out-Null
-          Expand-Archive dl\spike719-windows-x64.zip pkg -Force
+          Expand-Archive dl\spike719-windows-x64.zip pkg\spike719 -Force
           Get-ChildItem pkg\spike719 | Select-Object Name | Format-Table | Out-String | Write-Host
       - name: Runner display and GPU
         shell: pwsh
