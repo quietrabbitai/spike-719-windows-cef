@@ -91,12 +91,20 @@ if ($rects -and $h -ne [IntPtr]::Zero) {
   DblClick ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 82)
   Click ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 82) "right"; Start-Sleep -Seconds 1
   Shot (Join-Path $dir "7-contextmenu.png")
+  # choose "Copy" (first item, just below-right of the click point) and read the clipboard back
+  [System.Windows.Forms.Clipboard]::Clear()
+  Click ($o.X + $rects.s0.x + 70 + 30) ($o.Y + $rects.s0.y + 82 + 12); Start-Sleep -Seconds 1
+  try { "clipboard after context-menu Copy: [$([System.Windows.Forms.Clipboard]::GetText())]" | Add-Content $notes } catch { "clipboard read failed: $_" | Add-Content $notes }
+  Shot (Join-Path $dir "7b-after-copy.png")
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}"); Start-Sleep -Milliseconds 500
   # 4. wheel scroll inside pane 1
   MoveMouse ($o.X + $rects.s1.x + $rects.s1.w/2) ($o.Y + $rects.s1.y + $rects.s1.h/2)
   [W]::mouse_event(0x800,0,0,-360,[UIntPtr]::Zero); Start-Sleep -Milliseconds 300
   [W]::mouse_event(0x800,0,0,-360,[UIntPtr]::Zero); Start-Sleep -Seconds 1
   Shot (Join-Path $dir "8-scrolled.png")
+  # 5. host-drawn popup: click the fixed "open popup" button in pane 0 (real user gesture), screenshot, then close it
+  Click ($o.X + $rects.s0.x + 50) ($o.Y + $rects.s0.y + 74); Start-Sleep -Seconds 4
+  Shot (Join-Path $dir "9-popup.png")
 } else { "input phase skipped (rects or window handle missing)" | Add-Content $notes }
 
 "alive at end: $(-not (Get-Process -Id $p.Id -ErrorAction SilentlyContinue).HasExited)" | Add-Content $notes

@@ -532,7 +532,8 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
                 .map(|l| l.clone())
                 .unwrap_or_default();
             for (i, f) in layout.iter().enumerate().take(cefapp::PANE_COUNT) {
-                let url = format!("http://127.0.0.1:{port}/?pane={i}");
+                let st = if std::env::var_os("SPIKE719_CI").is_some() { "&st=1" } else { "" };
+                let url = format!("http://127.0.0.1:{port}/?pane={i}{st}");
                 let ok = if cli.mode.windowless() {
                     crate::bcef::create_windowless_pane(cli, i, &url, &root_cache)
                 } else {

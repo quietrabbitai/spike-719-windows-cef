@@ -42,6 +42,14 @@ const q = new URLSearchParams(location.search);
 document.getElementById('pane').textContent = q.get('pane') ?? '?';
 document.getElementById('origin').textContent = location.origin;
 const $ = (id) => document.getElementById(id);
+// CI smoke only (?st=1): a fixed button near the top so the smoke script can click it without scrolling.
+if (q.get('st') === '1') {
+  const b = document.createElement('button');
+  b.textContent = 'open popup (smoke)';
+  b.style.cssText = 'position:fixed;top:64px;left:10px;z-index:9';
+  b.onclick = () => { window.open('/popup?x=smoke'); };
+  document.body.appendChild(b);
+}
 
 // rAF interval statistics
 let last = performance.now(), iv = [];
