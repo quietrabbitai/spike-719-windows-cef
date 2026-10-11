@@ -134,13 +134,23 @@ wrap_life_span_handler! {
     impl LifeSpanHandler {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             let Some(browser) = browser else { return; };
+            // Popups share this client; only the pane's own browser may be recorded (round-6 harness bug:
+            // a closed popup cleared the pane entry, giving "pane browser not ready").
+            if browser.is_popup() != 0 {
+                log::info!("pane {} popup browser created", self.handler.pane);
+                return;
+            }
             log::info!("pane {} browser created", self.handler.pane);
             if let Ok(mut p) = PANES.lock() {
                 p[self.handler.pane] = Some(browser.clone());
             }
         }
 
-        fn on_before_close(&self, _browser: Option<&mut Browser>) {
+        fn on_before_close(&self, browser: Option<&mut Browser>) {
+            if browser.map(|b| b.is_popup() != 0).unwrap_or(false) {
+                log::info!("pane {} popup browser closed", self.handler.pane);
+                return;
+            }
             log::info!("pane {} browser closed", self.handler.pane);
             if let Ok(mut p) = PANES.lock() {
                 p[self.handler.pane] = None;
