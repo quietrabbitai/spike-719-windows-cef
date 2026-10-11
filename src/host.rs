@@ -313,8 +313,28 @@ fn fwd_key(slot: usize, kind: String, vk: i32, ch: u16, mods: DomMods) {
         "char" => cef::KeyEventType::CHAR,
         _ => return,
     };
-    // No real scancode over IPC: mirror the virtual-key code, as quietrabbit-core's Linux path does.
-    crate::bcef::key(slot, k, vk, vk, ch, cef_mods(&mods), false);
+    // Over IPC there is no real lParam. CEF's Windows key path derives the scan code from native_key_code (the
+    // WM_KEYDOWN lParam), so build one: scan code in bits 16-23, repeat count 1, up-transition bits for key-up.
+    // (CI finding: mirroring the virtual-key code, as the Linux path does, produced no text in the input.)
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        MapVirtualKeyW, VkKeyScanW, MAPVK_VK_TO_VSC,
+    };
+    let scan_vk = if kind == "char" {
+        let s = unsafe { VkKeyScanW(ch) };
+        if s == -1 {
+            0
+        } else {
+            (s & 0xff) as u32
+        }
+    } else {
+        vk as u32
+    };
+    let scan = unsafe { MapVirtualKeyW(scan_vk, MAPVK_VK_TO_VSC) };
+    let mut native = ((scan << 16) | 1) as i32;
+    if kind == "up" {
+        native |= (1 << 30) | (1u32 << 31) as i32;
+    }
+    crate::bcef::key(slot, k, vk, native, ch, cef_mods(&mods), false);
 }
 
 #[tauri::command]

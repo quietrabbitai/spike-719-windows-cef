@@ -99,6 +99,7 @@ function mods(e, buttons) { return { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.
 function makeHit(host, slot) {
   const hit = document.createElement('div');
   hit.className = 'hit';
+  hit.tabIndex = -1;
   const ta = document.createElement('textarea');
   ta.setAttribute('autocomplete', 'off'); ta.setAttribute('autocapitalize', 'off'); ta.spellcheck = false;
   hit.appendChild(ta);
@@ -114,6 +115,8 @@ function makeHit(host, slot) {
   };
   hit.addEventListener('pointermove', (e) => move(e, false));
   hit.addEventListener('pointerleave', (e) => move(e, true));
+  // Without this the browser's default mousedown action moves focus off the hidden textarea right after we focus it.
+  hit.addEventListener('mousedown', (e) => { e.preventDefault(); ta.focus(); });
   hit.addEventListener('pointerdown', (e) => {
     hit.setPointerCapture(e.pointerId); ta.focus(); invoke('fwd_focus', { slot, on: true });
     if (pending) sendMove();

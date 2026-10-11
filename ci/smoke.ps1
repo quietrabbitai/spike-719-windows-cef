@@ -83,8 +83,8 @@ if ($rects -and $h -ne [IntPtr]::Zero) {
   [System.Windows.Forms.SendKeys]::SendWait("hello 123"); Start-Sleep -Seconds 1
   Shot (Join-Path $dir "6-typed.png")
   # 3. select a word in pane 0 and open the context menu on it
-  DblClick ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 88)
-  Click ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 88) "right"; Start-Sleep -Seconds 1
+  DblClick ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 82)
+  Click ($o.X + $rects.s0.x + 70) ($o.Y + $rects.s0.y + 82) "right"; Start-Sleep -Seconds 1
   Shot (Join-Path $dir "7-contextmenu.png")
   [System.Windows.Forms.SendKeys]::SendWait("{ESC}"); Start-Sleep -Milliseconds 500
   # 4. wheel scroll inside pane 1
