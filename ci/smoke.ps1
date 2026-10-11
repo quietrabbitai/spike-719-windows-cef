@@ -47,7 +47,12 @@ function Click($x, $y, [string]$btn = "left") {
   else { [W]::mouse_event(0x8,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x10,0,0,0,[UIntPtr]::Zero) }
   Start-Sleep -Milliseconds 400
 }
-function DblClick($x, $y) { Click $x $y; Click $x $y }
+# Move once, then two quick clicks (the move helper takes ~0.5 s, which exceeds the 500 ms double-click window).
+function DblClick($x, $y) {
+  MoveMouse $x $y
+  for ($i = 0; $i -lt 2; $i++) { [W]::mouse_event(0x2,0,0,0,[UIntPtr]::Zero); [W]::mouse_event(0x4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 80 }
+  Start-Sleep -Milliseconds 300
+}
 
 $args = @("--mode=$Mode", "--profile=$prof", "--size=960x640")
 if ($Extra) { $args += $Extra.Split(" ") }
