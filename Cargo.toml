@@ -23,9 +23,14 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
+# cef's texture importer logs through `tracing`; the `log` feature forwards those to our file logger, which is
+# how a silent fallback to its black CPU placeholder texture gets noticed.
+tracing = { version = "0.1", features = ["log"] }
+wgpu = { version = "30", default-features = false, features = ["dx12", "wgsl", "std", "parking_lot"] }
+pollster = "0.4"
 # Same pins as quietrabbit-core. `sandbox` makes cef-dll-sys build libcef_dll_wrapper with USE_SANDBOX
 # (decisions.id=860: the Chromium sandbox stays enabled).
-cef = { version = "151.1.0", features = ["sandbox"] }
+cef = { version = "151.1.0", features = ["sandbox", "accelerated_osr"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
@@ -33,9 +38,14 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Gdi",
     "Win32_Security",
+    "Win32_System_DataExchange",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",
 ] }

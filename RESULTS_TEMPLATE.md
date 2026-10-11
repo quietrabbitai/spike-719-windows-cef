@@ -35,3 +35,12 @@ Result column: PASS / COMPROMISE (describe what the user sees) / FAIL / not test
 | 12 | Any compromise found (listed, not worked around) | a | | | | | |
 
 Add the same rows for each further mode (`a --cef-loop=pump`, and the `b-*` modes in stage 2).
+
+## Stage 2 modes (copy the 12-row table once per mode)
+`b-sw-above`, `b-sw-below`, `b-gpu-above`, `b-gpu-below` (and `a --cef-loop=pump`). Extra rows per B mode:
+| Extra | Observed | Result |
+|---|---|---|
+| Black or frozen pane (gpu modes: frames.csv import_ok/import_err) | | |
+| Right-click menu + selection-cache copy | | |
+| `<select>` dropdown renders and works | | |
+| Cursor shapes | | |

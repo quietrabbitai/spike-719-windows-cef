@@ -9,6 +9,9 @@ use cef::{self, args::Args, *};
 use crate::cli::{CefLoop, Cli, Runtime};
 
 pub const PANE_COUNT: usize = 2;
+/// Slots 0 and 1 are the panes; slot 2 is the host-managed window.open() popup (windowless modes only).
+pub const SLOT_COUNT: usize = 3;
+pub const POPUP_SLOT: usize = 2;
 
 /// Runs CEF's subprocess entry point when this invocation is a CEF-spawned helper. Returns true when the
 /// caller must return from main() immediately.
@@ -119,7 +122,7 @@ impl AppBuilder {
 
 // ---------------------------------------------------------------- Client / panes
 
-static PANES: Mutex<[Option<Browser>; PANE_COUNT]> = Mutex::new([None, None]);
+static PANES: Mutex<[Option<Browser>; SLOT_COUNT]> = Mutex::new([None, None, None]);
 
 #[derive(Clone)]
 pub struct PaneLife {
@@ -136,7 +139,7 @@ wrap_life_span_handler! {
             let Some(browser) = browser else { return; };
             // Popups share this client; only the pane's own browser may be recorded (round-6 harness bug:
             // a closed popup cleared the pane entry, giving "pane browser not ready").
-            if browser.is_popup() != 0 {
+            if browser.is_popup() != 0 && self.handler.pane != POPUP_SLOT {
                 log::info!("pane {} popup browser created", self.handler.pane);
                 return;
             }
@@ -147,7 +150,7 @@ wrap_life_span_handler! {
         }
 
         fn on_before_close(&self, browser: Option<&mut Browser>) {
-            if browser.map(|b| b.is_popup() != 0).unwrap_or(false) {
+            if browser.map(|b| b.is_popup() != 0).unwrap_or(false) && self.handler.pane != POPUP_SLOT {
                 log::info!("pane {} popup browser closed", self.handler.pane);
                 return;
             }
@@ -229,6 +232,18 @@ pub fn create_windowed_pane(
     created != 0
 }
 
+pub fn register(idx: usize, b: Browser) {
+    if let Ok(mut p) = PANES.lock() {
+        p[idx] = Some(b);
+    }
+}
+
+pub fn unregister(idx: usize) {
+    if let Ok(mut p) = PANES.lock() {
+        p[idx] = None;
+    }
+}
+
 pub fn pane_browser(idx: usize) -> Option<Browser> {
     PANES.lock().ok().and_then(|p| p[idx].clone())
 }
@@ -252,7 +267,7 @@ pub fn navigate_pane(idx: usize, url: &str) -> bool {
 }
 
 pub fn close_all_panes() {
-    for i in 0..PANE_COUNT {
+    for i in 0..SLOT_COUNT {
         if let Some(b) = pane_browser(i) {
             if let Some(h) = b.host() {
                 h.close_browser(true as _);

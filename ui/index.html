@@ -7,27 +7,39 @@
 <style>
   html, body { margin: 0; height: 100%; background: transparent; font: 14px system-ui, sans-serif; color: #1c1c1c; }
   body { position: relative; overflow: hidden; }
-  /* The window background behind the panes (visible only where no pane covers it). */
+  /* Window background. In the "below" placement the panes sit UNDER this webview, so #bg gets rectangular holes
+     (clip-path) exactly where a pane or popup is; everything else must stay opaque because the window is transparent. */
   #bg { position: absolute; inset: 0; background: #dfe6ee; z-index: -1; }
   #bar { position: absolute; left: 0; right: 0; top: 0; height: 52px; display: flex; gap: 8px; align-items: center;
-         padding: 0 12px; background: #2b3a4a; color: #fff; box-sizing: border-box; }
+         padding: 0 12px; background: #2b3a4a; color: #fff; box-sizing: border-box; z-index: 3; }
   #bar button, #bar select { font: inherit; padding: 5px 10px; }
   #rail { position: absolute; left: 0; top: 52px; bottom: 0; width: 46px; background: #3b4d61; display: flex;
-          flex-direction: column; align-items: center; gap: 10px; padding-top: 10px; }
+          flex-direction: column; align-items: center; gap: 10px; padding-top: 10px; z-index: 3; }
   .railbtn { width: 30px; height: 30px; border-radius: 6px; background: #5d7791; position: relative; }
   .railbtn:hover .tip { display: block; }
   .tip { display: none; position: absolute; left: 38px; top: 2px; white-space: nowrap; background: #111; color: #fff;
-         padding: 4px 8px; border-radius: 4px; z-index: 5; }
+         padding: 4px 8px; border-radius: 4px; z-index: 50; }
+  /* A tall tooltip hanging off a toolbar button so that it must overlap the panes underneath. */
+  .tipbtn { position: relative; }
+  .tipbtn:hover .bigtip { display: block; }
+  .bigtip { display: none; position: absolute; left: 0; top: 36px; width: 280px; height: 120px; background: #111; color: #fff;
+            padding: 8px; border-radius: 6px; z-index: 50; text-align: left; white-space: normal; }
   .slot { position: absolute; border: 2px dashed #7a8ea3; box-sizing: border-box; display: flex; align-items: center;
           justify-content: center; color: #55697d; }
   #s0 { left: 6%; top: 14%; width: 44%; height: 84%; }
   #s1 { left: 52%; top: 14%; width: 46%; height: 84%; }
+  .hit { position: absolute; inset: 0; touch-action: none; }
+  .hit textarea { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; resize: none; }
   #menu { display: none; position: absolute; top: 52px; left: 160px; width: 260px; height: 220px; background: #fff;
           border: 1px solid #889; box-shadow: 0 4px 16px #0006; z-index: 10; padding: 8px; box-sizing: border-box; }
   #scrim { display: none; position: absolute; inset: 0; background: #0005; z-index: 20; }
   #dlg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 420px; background: #fff;
          padding: 18px; border-radius: 8px; box-shadow: 0 8px 32px #0008; }
   #banner { position: absolute; left: 56px; top: 56px; font-size: 12px; color: #334; z-index: 1; }
+  /* Frame around the host-managed window.open() popup (windowless modes). */
+  #pop { display: none; position: absolute; border: 2px solid #c0392b; box-sizing: border-box; z-index: 2; }
+  #pop .popbar { position: absolute; left: 0; right: 0; top: -26px; height: 24px; background: #c0392b; color: #fff; font-size: 12px;
+                 display: flex; align-items: center; justify-content: space-between; padding: 0 6px; }
 </style>
 </head>
 <body>
@@ -36,22 +48,41 @@
   <strong>Spike 719</strong>
   <button id="bModal">Open modal (Privacy Guardian stand-in)</button>
   <button id="bMenu">Menu</button>
+  <button class="tipbtn" id="bTip">Hover: tall tooltip<span class="bigtip">Tooltip that hangs down over the panes. It must draw above a pane and show all of this text, including this last line.</span></button>
   <label>Pane 1 <select id="nav0"><option value="local">local page</option><option>https://claude.ai/</option><option>https://chatgpt.com/</option><option>https://gemini.google.com/</option></select></label>
   <label>Pane 2 <select id="nav1"><option value="local">local page</option><option>https://claude.ai/</option><option>https://chatgpt.com/</option><option>https://gemini.google.com/</option></select></label>
   <label>Mark <select id="marks"></select></label><button id="bMark">Log mark</button>
+  <button id="bClosePop" style="display:none">Close popup</button>
 </div>
-<div id="rail"><div class="railbtn"><span class="tip">Rail tooltip (HTML, must draw above a pane)</span></div><div class="railbtn"></div></div>
+<div id="rail">
+  <div class="railbtn"><span class="tip">Rail tooltip one (HTML)</span></div>
+  <div class="railbtn"><span class="tip" style="top:8px;width:420px;height:70px;white-space:normal">Rail tooltip two: tall and wide so it overlaps the pane area to the right of the rail.</span></div>
+</div>
 <div id="banner">loading…</div>
-<div class="slot" id="s0">pane 1 slot</div>
-<div class="slot" id="s1">pane 2 slot</div>
+<div class="slot" id="s0"><span class="lbl">pane 1 slot</span></div>
+<div class="slot" id="s1"><span class="lbl">pane 2 slot</span></div>
+<div id="pop"><div class="popbar"><span>popup (window.open)</span><span>Esc or window.close() to close</span></div></div>
 <div id="menu">HTML menu / dropdown that overlaps the pane area.<br><br>Item one<br>Item two<br>Item three<br>Item four</div>
 <div id="scrim"><div id="dlg"><h3>Privacy Guardian review (stand-in)</h3><p>This HTML modal must draw above both panes with no seam and without hiding them.</p><button id="bClose">Close</button></div></div>
 <script>
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 const frac = (el) => { const r = el.getBoundingClientRect();
   return { x: r.left / innerWidth, y: r.top / innerHeight, w: r.width / innerWidth, h: r.height / innerHeight }; };
-const report = () => invoke('set_layout', { panes: [frac($('s0')), frac($('s1'))] }).catch(() => {});
+let info = null, popRect = null;
+
+// ---- hole in the opaque window background (below placement only)
+function updateHoles() {
+  if (!info || !info.below) return;
+  const rects = [$('s0'), $('s1')].map((e) => e.getBoundingClientRect());
+  if (popRect) rects.push({ left: popRect.x, top: popRect.y, width: popRect.w, height: popRect.h });
+  let d = `M0 0H${innerWidth}V${innerHeight}H0Z`;
+  for (const r of rects) d += ` M${r.left} ${r.top}h${r.width}v${r.height}h${-r.width}Z`;
+  $('bg').style.clipPath = `path(evenodd, '${d}')`;
+}
+
+const report = () => { invoke('set_layout', { panes: [frac($('s0')), frac($('s1'))] }).catch(() => {}); updateHoles(); };
 new ResizeObserver(report).observe(document.body);
 addEventListener('resize', report);
 report();
@@ -61,13 +92,87 @@ const marks = ['start: move window', 'start: resize', 'start: maximize', 'start:
 for (const m of marks) { const o = document.createElement('option'); o.textContent = m; $('marks').appendChild(o); }
 $('bMark').onclick = () => invoke('mark', { label: $('marks').value });
 
-let info = null;
-invoke('info').then((i) => { info = i;
-  $('banner').textContent = `mode=${i.mode} sandbox=${i.sandbox} local=127.0.0.1:${i.port} profile=${i.profile}`; });
+// ---- Approach B input: invisible hit layer per slot (PaneHitLayer.tsx, ported). Used by the "below" placement;
+//      the "above" placement receives input natively on the pane window itself.
+const hitFor = {};
+function mods(e, buttons) { return { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, buttons: buttons ?? e.buttons ?? 0 }; }
+function makeHit(host, slot) {
+  const hit = document.createElement('div');
+  hit.className = 'hit';
+  const ta = document.createElement('textarea');
+  ta.setAttribute('autocomplete', 'off'); ta.setAttribute('autocapitalize', 'off'); ta.spellcheck = false;
+  hit.appendChild(ta);
+  host.appendChild(hit);
+  hitFor[slot] = hit;
+  let pending = null;
+  const sendMove = () => { const p = pending; pending = null; if (p) invoke('fwd_mouse_move', p); };
+  const move = (e, leave) => {
+    const r = hit.getBoundingClientRect();
+    const first = pending === null;
+    pending = { slot, x: e.clientX - r.left, y: e.clientY - r.top, leave, mods: mods(e) };
+    if (first) requestAnimationFrame(sendMove);
+  };
+  hit.addEventListener('pointermove', (e) => move(e, false));
+  hit.addEventListener('pointerleave', (e) => move(e, true));
+  hit.addEventListener('pointerdown', (e) => {
+    hit.setPointerCapture(e.pointerId); ta.focus(); invoke('fwd_focus', { slot, on: true });
+    if (pending) sendMove();
+    const r = hit.getBoundingClientRect();
+    invoke('fwd_mouse_click', { slot, x: e.clientX - r.left, y: e.clientY - r.top, button: e.button, up: false, count: e.detail || 1, mods: mods(e) });
+  });
+  hit.addEventListener('pointerup', (e) => {
+    if (pending) sendMove();
+    const r = hit.getBoundingClientRect();
+    invoke('fwd_mouse_click', { slot, x: e.clientX - r.left, y: e.clientY - r.top, button: e.button, up: true, count: e.detail || 1, mods: mods(e) });
+  });
+  hit.addEventListener('contextmenu', (e) => e.preventDefault()); // the Win32 menu is shown by Rust
+  hit.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = hit.getBoundingClientRect();
+    const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? innerHeight : 1;
+    invoke('fwd_wheel', { slot, x: e.clientX - r.left, y: e.clientY - r.top, dx: e.deltaX * k, dy: e.deltaY * k, mods: mods(e, 0) });
+  }, { passive: false });
+  ta.addEventListener('blur', () => invoke('fwd_focus', { slot, on: false }));
+  ta.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return; // the IME owns this key
+    e.preventDefault();
+    invoke('fwd_key', { slot, kind: 'down', vk: e.keyCode, ch: 0, mods: mods(e, 0) });
+    if (e.key === 'Enter') invoke('fwd_key', { slot, kind: 'char', vk: 13, ch: 13, mods: mods(e, 0) });
+    else if (e.key.length === 1 && !e.ctrlKey && !e.altKey) invoke('fwd_key', { slot, kind: 'char', vk: e.key.charCodeAt(0), ch: e.key.charCodeAt(0), mods: mods(e, 0) });
+  });
+  ta.addEventListener('keyup', (e) => { if (!e.isComposing && e.keyCode !== 229) invoke('fwd_key', { slot, kind: 'up', vk: e.keyCode, ch: 0, mods: mods(e, 0) }); });
+  ta.addEventListener('compositionupdate', (e) => invoke('fwd_ime', { slot, kind: 'update', text: e.data || '' }));
+  ta.addEventListener('compositionend', (e) => { invoke('fwd_ime', { slot, kind: 'commit', text: e.data || '' }); ta.value = ''; });
+  return hit;
+}
+
+invoke('info').then((i) => {
+  info = i;
+  $('banner').textContent = `mode=${i.mode} sandbox=${i.sandbox} local=127.0.0.1:${i.port} profile=${i.profile}`;
+  if (i.windowless) {
+    for (const l of document.querySelectorAll('.lbl')) l.textContent = '';
+    $('bClosePop').style.display = '';
+  }
+  if (i.windowless && i.below) {
+    makeHit($('s0'), 0); makeHit($('s1'), 1);
+    makeHit($('pop'), 2);
+  }
+  updateHoles();
+});
 for (const n of [0, 1]) $('nav' + n).onchange = (e) => {
   const v = e.target.value === 'local' ? `http://127.0.0.1:${info.port}/?pane=${n}` : e.target.value;
   invoke('navigate_pane', { pane: n, url: v }).catch((x) => alert(x));
 };
+$('bClosePop').onclick = () => invoke('close_popup');
+
+listen('pane-cursor', (ev) => { const h = hitFor[ev.payload.slot]; if (h) h.style.cursor = ev.payload.css; });
+listen('popup-rect', (ev) => {
+  popRect = ev.payload;
+  const p = $('pop');
+  if (popRect) { p.style.display = 'block'; p.style.left = popRect.x + 'px'; p.style.top = popRect.y + 'px';
+    p.style.width = popRect.w + 'px'; p.style.height = popRect.h + 'px'; } else { p.style.display = 'none'; }
+  updateHoles();
+});
 
 const showOverlay = (el, rectEl) => { el.style.display = 'block'; invoke('set_modal', { open: true, rect: frac(rectEl) }); };
 const hideOverlay = (el) => { el.style.display = 'none'; invoke('set_modal', { open: false, rect: null }); };

@@ -5,6 +5,14 @@ pub mod localserver;
 pub mod spikelog;
 
 #[cfg(windows)]
+pub mod bcef;
+#[cfg(windows)]
+pub mod bgpu;
+#[cfg(windows)]
+pub mod bshared;
+#[cfg(windows)]
+pub mod bwin;
+#[cfg(windows)]
 pub mod host;
 #[cfg(windows)]
 pub mod winenv;

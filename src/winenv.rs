@@ -363,3 +363,21 @@ pub fn other_instances() -> String {
         list.join(", ")
     }
 }
+
+/// Adds keys to the already-written env.json (used for the wgpu adapter/backend, known only after GPU init).
+pub fn merge_env(profile: &Path, extra: serde_json::Value) {
+    let path = profile.join("env.json");
+    let mut cur: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let (Some(c), Some(e)) = (cur.as_object_mut(), extra.as_object()) {
+        for (k, v) in e {
+            c.insert(k.clone(), v.clone());
+        }
+    }
+    let _ = std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&cur).unwrap_or_default(),
+    );
+}
