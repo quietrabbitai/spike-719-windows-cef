@@ -93,3 +93,44 @@ jobs:
             pkg/SHA256.txt
           retention-days: 14
           if-no-files-found: error
+
+  # Functional smoke test on the runner: starts each mode, takes screenshots, collects logs.
+  # NOT parity evidence: the runner is a VM with no real GPU and a virtual display.
+  smoke:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: spike719-windows-x64
+          path: dl
+      - name: Unpack
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          Expand-Archive dl\spike719-windows-x64.zip pkg -Force
+          Get-ChildItem pkg\spike719 | Select-Object Name | Format-Table | Out-String | Write-Host
+      - name: Runner display and GPU
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.SystemInformation]::VirtualScreen | Format-List | Out-String | Write-Host
+          Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion | Format-Table | Out-String | Write-Host
+      - name: Smoke modes
+        shell: pwsh
+        run: |
+          foreach ($m in @("a","b-sw-below","b-sw-above","b-gpu-below","b-gpu-above")) {
+            ./ci/smoke.ps1 -Mode $m
+          }
+          ./ci/smoke.ps1 -Mode "a" -Extra "--cef-loop=pump"
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-results
+          path: smoke
+          retention-days: 14
+          if-no-files-found: warn

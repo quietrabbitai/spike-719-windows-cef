@@ -158,6 +158,14 @@ invoke('info').then((i) => {
     makeHit($('pop'), 2);
   }
   updateHoles();
+  if (i.selftest) {
+    // CI smoke run: drive the overlay buttons on a timer so screenshots can capture them. Not used on the PC.
+    const step = (ms, fn) => setTimeout(fn, ms);
+    step(12000, () => $('bModal').click());
+    step(16000, () => $('bClose').click());
+    step(18000, () => $('bMenu').click());
+    step(22000, () => $('bMenu').click());
+  }
 });
 for (const n of [0, 1]) $('nav' + n).onchange = (e) => {
   const v = e.target.value === 'local' ? `http://127.0.0.1:${info.port}/?pane=${n}` : e.target.value;

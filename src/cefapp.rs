@@ -110,6 +110,11 @@ wrap_app! {
             sw("disable-domain-reliability", None);
             sw("no-pings", None);
             sw("metrics-recording-only", None);
+            // CI smoke runs execute elevated (the runner user is an administrator); Chromium would otherwise
+            // relaunch itself de-elevated and the original process would exit.
+            if std::env::var_os("SPIKE719_CI").is_some() {
+                sw("do-not-de-elevate", None);
+            }
         }
     }
 }

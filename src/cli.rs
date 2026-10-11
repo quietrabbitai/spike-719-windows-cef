@@ -81,6 +81,7 @@ pub enum ZOrder {
 #[derive(Clone, Debug)]
 pub struct Cli {
     pub a_zorder: ZOrder,
+    pub size: (f64, f64),
     pub mode: Mode,
     pub cef_loop: CefLoop,
     pub runtime: Runtime,
@@ -104,6 +105,7 @@ pub fn init(cli: Cli) {
 pub fn parse() -> Result<Cli, String> {
     let mut cli = Cli {
         a_zorder: ZOrder::Raise,
+        size: (1280.0, 800.0),
         mode: Mode::A,
         cef_loop: CefLoop::Mt,
         runtime: Runtime::Alloy,
@@ -149,6 +151,13 @@ pub fn parse() -> Result<Cli, String> {
                     "keep" => ZOrder::Keep,
                     _ => return Err(format!("unknown --a-zorder={v}")),
                 }
+            }
+            "--size" => {
+                let (w, h) = v.split_once('x').ok_or(format!("bad --size={v}"))?;
+                cli.size = (
+                    w.parse().map_err(|_| format!("bad --size={v}"))?,
+                    h.parse().map_err(|_| format!("bad --size={v}"))?,
+                );
             }
             "--profile" => cli.profile = PathBuf::from(v),
             "--diag-no-sandbox" => cli.diag_no_sandbox = true,

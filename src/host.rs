@@ -343,6 +343,7 @@ struct Info {
     mode: &'static str,
     windowless: bool,
     below: bool,
+    selftest: bool,
     port: u16,
     profile: String,
     sandbox: &'static str,
@@ -355,6 +356,7 @@ fn info(sh: State<'_, Arc<Shared>>) -> Info {
         mode: c.mode.as_str(),
         windowless: c.mode.windowless(),
         below: c.mode.below(),
+        selftest: std::env::var_os("SPIKE719_CI").is_some(),
         port: sh.port,
         profile: sh.profile.to_string_lossy().into_owned(),
         sandbox: if c.diag_no_sandbox {
@@ -426,8 +428,8 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
             );
             let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title(title)
-                .inner_size(1280.0, 800.0)
-                .min_inner_size(900.0, 600.0)
+                .inner_size(cli.size.0, cli.size.1)
+                .min_inner_size(640.0, 480.0)
                 .transparent(cli.mode.below())
                 // WebView2 gets its own user-data folder inside the spike profile: never Edge's or Jason's.
                 .data_directory(sh_setup.profile.join("webview2"))
