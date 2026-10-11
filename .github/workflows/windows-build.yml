@@ -71,12 +71,20 @@ jobs:
           $rel = "target\release"
           $out = "pkg\spike719"
           New-Item -ItemType Directory -Force $out | Out-Null
-          Get-ChildItem $rel -File | Where-Object { $_.Extension -in ".dll",".pak",".bin",".dat",".json" } | Copy-Item -Destination $out
-          if (Test-Path "$rel\locales") { Copy-Item "$rel\locales" "$out\locales" -Recurse }
+          # The CEF runtime comes from the CEF distribution directory itself: copying it out of target\release only
+          # works on a cold build (cef-dll-sys copies it there from its build script, which a cache hit skips).
+          $libcef = Get-ChildItem .cef-cache -Recurse -Filter libcef.dll | Select-Object -First 1
+          if (-not $libcef) { throw "libcef.dll not found in the CEF cache" }
+          $cefdir = $libcef.DirectoryName
+          Get-ChildItem $cefdir -File | Where-Object { $_.Extension -in ".dll",".pak",".bin",".dat",".json" -and $_.Name -ne "archive.json" } | Copy-Item -Destination $out
+          Copy-Item "$cefdir\locales" "$out\locales" -Recurse
+          Copy-Item "$rel\spike719.dll" $out
           $boot = Get-ChildItem .cef-cache -Recurse -Filter bootstrap.exe | Select-Object -First 1
           if (-not $boot) { throw "bootstrap.exe not found in the CEF distribution" }
           Copy-Item $boot.FullName "$out\spike719.exe"
-          if (-not (Test-Path "$out\spike719.dll")) { throw "spike719.dll missing from the build output" }
+          foreach ($need in "spike719.dll","libcef.dll","chrome_elf.dll","resources.pak","icudtl.dat") {
+            if (-not (Test-Path "$out\$need")) { throw "$need missing from the package" }
+          }
           Copy-Item README.md, RUN_STEPS.md, RESULTS_TEMPLATE.md $out
           Get-ChildItem $out | Select-Object Name, Length | Format-Table -AutoSize | Out-String | Write-Host
           Compress-Archive -Path "$out\*" -DestinationPath "pkg\spike719-windows-x64.zip"
