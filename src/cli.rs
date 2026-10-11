@@ -70,8 +70,17 @@ pub enum ModalPolicy {
     Hole,
 }
 
+/// Mode A: whether the CEF child windows are raised above the WebView2 child (default) or left where creation
+/// order put them. `keep` exists to document the default stacking (CI-run-5 finding: panes loaded but invisible).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ZOrder {
+    Raise,
+    Keep,
+}
+
 #[derive(Clone, Debug)]
 pub struct Cli {
+    pub a_zorder: ZOrder,
     pub mode: Mode,
     pub cef_loop: CefLoop,
     pub runtime: Runtime,
@@ -94,6 +103,7 @@ pub fn init(cli: Cli) {
 
 pub fn parse() -> Result<Cli, String> {
     let mut cli = Cli {
+        a_zorder: ZOrder::Raise,
         mode: Mode::A,
         cef_loop: CefLoop::Mt,
         runtime: Runtime::Alloy,
@@ -131,6 +141,13 @@ pub fn parse() -> Result<Cli, String> {
                     "hide" => ModalPolicy::Hide,
                     "hole" => ModalPolicy::Hole,
                     _ => return Err(format!("unknown --a-modal-policy={v}")),
+                }
+            }
+            "--a-zorder" => {
+                cli.a_zorder = match v.as_str() {
+                    "raise" => ZOrder::Raise,
+                    "keep" => ZOrder::Keep,
+                    _ => return Err(format!("unknown --a-zorder={v}")),
                 }
             }
             "--profile" => cli.profile = PathBuf::from(v),

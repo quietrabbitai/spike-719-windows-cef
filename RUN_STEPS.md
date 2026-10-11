@@ -23,6 +23,9 @@ cd C:\spike719
 .\spike719.exe --mode=a                    # CEF on its own thread (what Linux does)
 .\spike719.exe --mode=a --cef-loop=pump    # CEF pumped from the main thread; run this second
 ```
+Mode A now raises the CEF windows above the WebView2 layer by default. For the comparison run once with
+`.\spike719.exe --mode=a --a-zorder=keep` (creation order, no raise) and say whether the panes are visible.
+Run from a NORMAL (non-admin) PowerShell: an elevated launch makes Chromium relaunch itself de-elevated.
 Close the window between runs. If the window never appears or the app exits, copy `%TEMP%\qr-spike-719\spike.log`
 and `cef.log` into the results; that is itself the finding.
 

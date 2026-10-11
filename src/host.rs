@@ -9,18 +9,20 @@ use std::time::{Duration, Instant};
 use cef::{ImplBrowser, ImplBrowserHost};
 use serde::{Deserialize, Serialize};
 use tauri::{RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use windows::core::BOOL;
 use windows::core::HSTRING;
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ, RGN_DIFF,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, MessageBoxW, SetWindowPos, ShowWindow, MB_ICONERROR, MB_OK, SWP_NOACTIVATE,
-    SWP_NOZORDER, SW_HIDE, SW_SHOWNA,
+    EnumChildWindows, GetAncestor, GetClassNameW, GetClientRect, GetWindowRect, IsWindowVisible,
+    MessageBoxW, SetWindowPos, ShowWindow, GA_PARENT, HWND_TOP, MB_ICONERROR, MB_OK,
+    SWP_NOACTIVATE, SWP_NOZORDER, SW_HIDE, SW_SHOWNA,
 };
 
 use crate::cefapp;
-use crate::cli::{self, CefLoop, Cli, ModalPolicy, Mode};
+use crate::cli::{self, CefLoop, Cli, ModalPolicy, Mode, ZOrder};
 use crate::spikelog;
 use crate::winenv;
 
@@ -36,6 +38,7 @@ pub struct Shared {
     layout: Mutex<Vec<Frac>>,
     modal: Mutex<Option<Frac>>,
     parent: AtomicIsize,
+    zorder_logged: std::sync::atomic::AtomicBool,
     port: u16,
     profile: PathBuf,
 }
@@ -55,6 +58,44 @@ pub fn fatal(msg: &str) -> ! {
         );
     }
     std::process::exit(2)
+}
+
+static ENUM_PARENT: AtomicIsize = AtomicIsize::new(0);
+
+unsafe extern "system" fn child_cb(h: HWND, lp: LPARAM) -> BOOL {
+    // Direct children only; EnumChildWindows walks the z-order top to bottom.
+    if GetAncestor(h, GA_PARENT) == hwnd(ENUM_PARENT.load(Ordering::Relaxed)) {
+        let v = &mut *(lp.0 as *mut Vec<String>);
+        let mut cls = [0u16; 64];
+        let n = GetClassNameW(h, &mut cls).max(0) as usize;
+        let mut r = RECT::default();
+        let _ = GetWindowRect(h, &mut r);
+        v.push(format!(
+            "{:#x} class={} visible={} rect=({},{},{},{})",
+            h.0 as isize,
+            String::from_utf16_lossy(&cls[..n]),
+            IsWindowVisible(h).as_bool(),
+            r.left,
+            r.top,
+            r.right,
+            r.bottom
+        ));
+    }
+    BOOL(1)
+}
+
+/// Logs the parent's direct children in z-order (top first) to events.csv: the evidence for the stacking finding.
+fn log_zorder(parent: isize, label: &str) {
+    ENUM_PARENT.store(parent, Ordering::Relaxed);
+    let mut v: Vec<String> = Vec::new();
+    unsafe {
+        let _ = EnumChildWindows(
+            Some(hwnd(parent)),
+            Some(child_cb),
+            LPARAM(&mut v as *mut _ as isize),
+        );
+    }
+    spikelog::event("zorder", &format!("{label}: {}", v.join(" | ")));
 }
 
 fn client_size(parent: isize) -> (i32, i32) {
@@ -82,6 +123,12 @@ fn apply_layout(sh: &Shared) {
     }
     let (cw, ch) = client_size(parent);
     let layout = sh.layout.lock().map(|l| l.clone()).unwrap_or_default();
+    if !sh.zorder_logged.load(Ordering::Relaxed)
+        && (0..cefapp::PANE_COUNT).all(|i| cefapp::pane_hwnd(i).is_some())
+    {
+        sh.zorder_logged.store(true, Ordering::Relaxed);
+        log_zorder(parent, "before first layout (creation order)");
+    }
     let modal = sh.modal.lock().ok().and_then(|m| *m);
     let policy = cli::get().modal_policy;
     for (i, f) in layout.iter().enumerate().take(cefapp::PANE_COUNT) {
@@ -91,7 +138,11 @@ fn apply_layout(sh: &Shared) {
         let (x, y, w, hh) = px(f, cw, ch);
         let t = Instant::now();
         unsafe {
-            let _ = SetWindowPos(hwnd(h), None, x, y, w, hh, SWP_NOZORDER | SWP_NOACTIVATE);
+            if cli::get().a_zorder == ZOrder::Raise {
+                let _ = SetWindowPos(hwnd(h), Some(HWND_TOP), x, y, w, hh, SWP_NOACTIVATE);
+            } else {
+                let _ = SetWindowPos(hwnd(h), None, x, y, w, hh, SWP_NOZORDER | SWP_NOACTIVATE);
+            }
             match (policy, modal) {
                 (ModalPolicy::Hide, Some(_)) => {
                     let _ = ShowWindow(hwnd(h), SW_HIDE);
@@ -206,6 +257,7 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
         ]),
         modal: Mutex::new(None),
         parent: AtomicIsize::new(0),
+        zorder_logged: std::sync::atomic::AtomicBool::new(false),
         port,
         profile: cli.profile.clone(),
     });
@@ -261,6 +313,11 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
             let _ = std::fs::create_dir_all(sh_setup.profile.join("webview2"));
             if !cefapp::initialize(cli, &root_cache, sandbox_addr as *mut u8) {
                 let code = cef::get_exit_code();
+                if code == 24 || code == 38 {
+                    // Chromium relaunched/handed over to another copy (e.g. de-elevated); that copy is the real one.
+                    log::info!("cef::initialize handed over (exit code {code}); this process exits");
+                    std::process::exit(0);
+                }
                 let meaning = match code {
                     21 => "PROFILE_IN_USE: another process holds the profile folder",
                     24 => "NORMAL_EXIT_PROCESS_NOTIFIED: handed over to an already-running instance",
@@ -294,6 +351,22 @@ pub fn run(cli: Cli, sandbox_info: *mut u8) {
                 if !ok {
                     fatal(&format!("CEF refused to create pane {i}"));
                 }
+            }
+            // Pane HWNDs appear asynchronously: re-apply the layout until both exist, then log the stacking.
+            {
+                let handle = app.handle().clone();
+                let sh = sh_setup.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..40 {
+                        std::thread::sleep(Duration::from_millis(250));
+                        let sh2 = sh.clone();
+                        let _ = handle.run_on_main_thread(move || apply_layout(&sh2));
+                    }
+                    let sh3 = sh.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        log_zorder(sh3.parent.load(Ordering::Relaxed), "after layout");
+                    });
+                });
             }
             winenv::start_sampler(sh_setup.profile.clone());
             Ok(())
