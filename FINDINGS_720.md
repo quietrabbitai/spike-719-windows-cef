@@ -28,8 +28,8 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
 | Retina (virtual 2x display, instrumentation only) | scale and placement logged | frame = view pixels = drawable (1126x1290 for a 563.2x645.1 pt pane); DIP-to-pixel for IPC and real clicks correct | same |
 | Chromium sandbox ON (decisions.id=860) | not run in `a` | children sandboxed | children sandboxed (browser process is not, as on macOS generally) |
 | Signing | ad-hoc and hardened-runtime builds launch and sandbox; Gatekeeper rejects both (no Developer ID); notarization not tested | | |
-| Gemini login (throwaway account) | **pending**: with the WKWebView hidden there is no toolbar to load Gemini; a start-up URL option is being added | not run | **worked** (Jason: "check 1 worked"; no further detail such as block text was reported) |
-| Real-input scroll, **mouse and keyboard (no trackpad available)** (Jason) | not run | **smooth** overall; **sideways shift still occurs with the mouse wheel** (cause not isolated). Page-side log: one 8.95 s gesture = 462 updates, 51.6/s, p95 gap 19 ms, worst 403 ms; six other gestures 6-22 updates/s with worst gaps 600-765 ms. The page does not tag the input device, so which gesture was wheel, scrollbar drag or keyboard is not known | not run |
+| Gemini login (throwaway account) | Gemini loaded in pane 1 through the new start-up URL option (logged). Jason: **"The login said account was recovered."** No block message was reported; whether it reached the chat is not stated. The quit and crash outcome of this run was not reported yet (the app was still open when last checked) | not run | **worked** (Jason: "check 1 worked"; no further detail such as block text was reported) |
+| Real-input scroll, **mouse and keyboard (no trackpad available)** (Jason) | not run | Jason: scrolling the **whole page** was smooth (seemed smoother than before); the **list inside the pane** was smoother too but **still shows the line shift, the same with the mouse wheel and with keyboard scrolling** (cause not isolated). Page-side log: one 8.95 s gesture = 462 updates, 51.6/s, p95 gap 19 ms, worst 403 ms; six other gestures 6-22 updates/s with worst gaps 600-765 ms. The page does not tag the input device, so which gesture was wheel, scrollbar drag or keyboard is not known | not run |
 | Trackpad scroll (inertia, phases) | **not tested: no trackpad on this Mac** | | |
 | Real-panel Retina | **not tested** (no Retina display; the virtual display is a compromise) | | |
 | IME / CJK input | not tested | | |
@@ -48,12 +48,14 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    about 12/s (instant jumps, no smooth animation). Separately, host paints stall about 250-450 ms at the start of a scroll
    gesture and at direction changes (60 -> ~30-37 paints/s); this does not depend on wheel rate and is the same in the
    software and GPU paths; presenting a frame takes 0.5-7 ms. Input above was synthetic wheel events. Jason's real-input run
-   (`b-sw-below`, mouse and keyboard; **there is no trackpad on this Mac, so trackpad scrolling is untested**): scrolling was
-   smooth overall (one 462-update gesture, 51.6/s, worst gap 403 ms) but the mouse wheel still shows the sideways shift
-   (Jason). The page does not record the input device, so the six coarse gestures in the log (6-22 updates/s, worst gaps
+   (`b-sw-below`, mouse and keyboard; **there is no trackpad on this Mac, so trackpad scrolling is untested**): scrolling the
+   whole page was smooth (one 462-update gesture, 51.6/s, worst gap 403 ms); the list inside the pane was smoother but still
+   shows the line shift, **the same with the mouse wheel and with keyboard scrolling** (Jason). The page does not record the input device, so the six coarse gestures in the log (6-22 updates/s, worst gaps
    600-765 ms) cannot be attributed to the wheel with certainty. (The profile folder is named `trackpad-b-sw-below` only
-   because of the command I gave; it is not a trackpad run.) Horizontal scroll deltas are not logged yet, so
-   whether the shift is a horizontal component of the wheel events is a guess, not a finding.
+   because of the command I gave; it is not a trackpad run.) Because keyboard scrolling (key events, no wheel events) shows the same
+   shift, a horizontal component of the wheel events is **not** the cause. Where the shift comes from (CEF's windowless
+   text rendering of the scrolling list, or how my Metal layer presents it) is not isolated; whether it also appears in
+   native mode `a` is untested.
 4. **Key events through the host were wrong, and a fix was found.** Versus native input, the IPC path produced
    `event.key == "Unidentified"` for letters and Shift, **two keydowns per press, and no keyup**. Cause (by experiment): with
    `character == 0`, CEF on macOS cannot derive `key` and turns a KEYUP into a keydown. Sending the character on both the
@@ -94,10 +96,11 @@ macenv 81, macmain 52, bins 21) plus ~170 lines of tools; shared files touched a
 No OOM; swap was 0 before and about 17 MB after the session; peak memory was not measured.
 
 ## Not verified / open
-- Gemini login in mode `a` with the WKWebView hidden (blocked until a start-up URL option exists); details of the
-  `b-gpu-below` Gemini result beyond "worked".
+- Gemini login: details beyond "worked" (`b-gpu-below`) and "the login said account was recovered" (mode `a`, WKWebView
+  hidden); the quit and crash outcome of the mode `a` run.
 - Trackpad scrolling (no trackpad on this Mac; production Macs have one); real Retina panel; notarization and Gatekeeper with a Developer ID; IME composition; mixed DPI; soak.
 - The Windows build was not rebuilt or run on this Mac after the shared-file edits.
 - Why the WKWebView blocks input to windowed CEF views in mode `a`; root cause of the scroll-start stall.
 - Commits on `mac-720`, local only, nothing pushed: `4e17d38` (spike), `3a5205c` (drawable-size log), `3e218e9` (key fix).
-  This note is committed separately; the start-up URL option for mode `a` is not yet in any commit.
+  This note is committed separately (`2da039d`, correction `ffdc9bb`); the start-up URL option for mode `a` (`SPIKE720_PANE<i>_URL`)
+  is not yet in any commit.
