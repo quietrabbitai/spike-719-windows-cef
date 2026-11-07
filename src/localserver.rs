@@ -21,6 +21,10 @@ pub fn start() -> u16 {
                     .next()
                     .and_then(|l| l.split_whitespace().nth(1))
                     .unwrap_or("/");
+                // items.id=720 self-test: the page reports what it saw; the host logs it to events.csv.
+                if path.starts_with("/selftest") {
+                    crate::spikelog::event("selftest", path);
+                }
                 let (status, body) = if path.starts_with("/popup") {
                     ("200 OK", POPUP)
                 } else if path == "/" || path.starts_with("/?") {

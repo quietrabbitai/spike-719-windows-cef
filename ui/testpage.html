@@ -39,6 +39,29 @@
 
 <script>
 const q = new URLSearchParams(location.search);
+// items.id=720 diagnostics: report what this page actually receives to the loopback server (events.csv). First 40 only.
+{ let n = 0; const rep = (what) => { if (n++ < 40) fetch('/selftest?pane=' + (q.get('pane') ?? '?') + '&' + what).catch(() => {}); };
+  const tgt = (e) => encodeURIComponent((e.target.id || e.target.tagName) + ':' + (e.target.textContent || e.target.value || '').slice(0, 24));
+  document.addEventListener('mousedown', (e) => rep('mousedown=' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + '&target=' + tgt(e)), true);
+  document.addEventListener('click', (e) => rep('click=' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + '&target=' + tgt(e)), true);
+  document.addEventListener('keydown', (e) => rep('keydown=' + encodeURIComponent(e.key) + '&target=' + tgt(e)), true);
+  document.addEventListener('focusin', (e) => rep('focusin=' + tgt(e)), true);
+  let sc = 0; document.addEventListener('scroll', (e) => { if (sc++ % 20 === 0) rep('scroll=' + Math.round(window.scrollY) + '&target=' + tgt(e)); }, true);
+  window.__rep = rep; }
+// items.id=720 diagnostics: scroll UPDATE gaps measured page-side, identical in every mode (including mode a, which has no
+// host paint log). A scroll "update" = a rAF tick at which window.scrollY + #scroll.scrollTop changed. Reported to the
+// loopback server 800 ms after the last update (a gesture = updates less than 1.5 s apart).
+{ const sc = document.getElementById('scroll'); const pos = () => window.scrollY + (sc ? sc.scrollTop : 0);
+  let lastY = pos(), lastT = 0, start = 0, gaps = [], updates = 0, idle = null;
+  const report = () => { if (!gaps.length) return; const g = [...gaps].sort((a, b) => a - b); const dur = (lastT - start) / 1000;
+    fetch('/selftest?pane=' + (q.get('pane') ?? '?') + '&scrollstats=updates:' + updates + ',dur_s:' + dur.toFixed(2) + ',updates_per_s:' + (updates / dur).toFixed(1) +
+      ',gap_p95_ms:' + g[Math.floor(g.length * 0.95)].toFixed(0) + ',gap_max_ms:' + g[g.length - 1].toFixed(0)).catch(() => {});
+    gaps = []; updates = 0; lastT = 0; };
+  const loop = (t) => { const y = pos();
+    if (y !== lastY) { if (lastT && t - lastT < 1500) gaps.push(t - lastT); else { gaps = []; updates = 0; start = t; }
+      updates++; lastT = t; lastY = y; clearTimeout(idle); idle = setTimeout(report, 800); }
+    requestAnimationFrame(loop); };
+  requestAnimationFrame(loop); }
 document.getElementById('pane').textContent = q.get('pane') ?? '?';
 document.getElementById('origin').textContent = location.origin;
 const $ = (id) => document.getElementById(id);

@@ -24,6 +24,11 @@
   .tipbtn:hover .bigtip { display: block; }
   .bigtip { display: none; position: absolute; left: 0; top: 36px; width: 280px; height: 120px; background: #111; color: #fff;
             padding: 8px; border-radius: 6px; z-index: 50; text-align: left; white-space: normal; }
+  /* macOS (items.id=720): the dashed frame must not eat 2px of the box, or the pane view (sized from the outer box) is
+     2px off from the hit layer (sized from the inner box). outline-offset keeps the frame inside the same box. */
+  /* macOS: the popup frame's title strip hangs 26px above the popup and was drawn behind the toolbar (z-index 3). */
+  .mac #pop { z-index: 4; }
+  .mac .slot { border: 0 !important; outline: 2px dashed #7a8ea3; outline-offset: -2px; }
   .slot { position: absolute; border: 2px dashed #7a8ea3; box-sizing: border-box; display: flex; align-items: center;
           justify-content: center; color: #55697d; }
   #s0 { left: 6%; top: 14%; width: 44%; height: 84%; }
@@ -65,7 +70,13 @@
 <div id="menu">HTML menu / dropdown that overlaps the pane area.<br><br>Item one<br>Item two<br>Item three<br>Item four</div>
 <div id="scrim"><div id="dlg"><h3>Privacy Guardian review (stand-in)</h3><p>This HTML modal must draw above both panes with no seam and without hiding them.</p><button id="bClose">Close</button></div></div>
 <script>
-const { invoke } = window.__TAURI__.core;
+if (/Mac/.test(navigator.userAgent)) document.documentElement.classList.add('mac');
+const { invoke: rawInvoke } = window.__TAURI__.core;
+// items.id=720 diagnostics: a rejected invoke is reported through `mark` (which is known to work) instead of vanishing.
+let errCount = 0;
+const invoke = (cmd, args) => { const p = rawInvoke(cmd, args);
+  if (cmd.startsWith('fwd_') && cmd !== 'fwd_mouse_move' && cmd !== 'fwd_wheel') p.catch((e) => { if (errCount++ < 20) rawInvoke('mark', { label: 'JS invoke ERR ' + cmd + ': ' + JSON.stringify(e) }); });
+  return p; };
 const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 const frac = (el) => { const r = el.getBoundingClientRect();
@@ -114,7 +125,8 @@ $('bMark').onclick = () => invoke('mark', { label: $('marks').value });
 // ---- Approach B input: invisible hit layer per slot (PaneHitLayer.tsx, ported). Used by the "below" placement;
 //      the "above" placement receives input natively on the pane window itself.
 const hitFor = {};
-function mods(e, buttons) { return { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, buttons: buttons ?? e.buttons ?? 0 }; }
+// `meta` (Cmd) and the key `code` are used by the macOS host (items.id=720); the Windows host ignores them.
+function mods(e, buttons) { return { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey, buttons: buttons ?? e.buttons ?? 0 }; }
 function makeHit(host, slot) {
   const hit = document.createElement('div');
   hit.className = 'hit';
@@ -137,6 +149,8 @@ function makeHit(host, slot) {
   // Without this the browser's default mousedown action moves focus off the hidden textarea right after we focus it.
   hit.addEventListener('mousedown', (e) => { e.preventDefault(); ta.focus(); });
   hit.addEventListener('pointerdown', (e) => {
+    if (window.__dbgDown === undefined) window.__dbgDown = 0;
+    if (window.__dbgDown++ < 10) { const hr = hit.getBoundingClientRect(); rawInvoke('mark', { label: 'JS pointerdown slot=' + slot + ' client=' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ' hitrect=' + Math.round(hr.left) + ',' + Math.round(hr.top) + ',' + Math.round(hr.width) + 'x' + Math.round(hr.height) + ' inner=' + innerWidth + 'x' + innerHeight + ' dpr=' + devicePixelRatio }); }
     hit.setPointerCapture(e.pointerId); ta.focus(); invoke('fwd_focus', { slot, on: true });
     if (pending) sendMove();
     const r = hit.getBoundingClientRect();
@@ -158,11 +172,11 @@ function makeHit(host, slot) {
   ta.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return; // the IME owns this key
     e.preventDefault();
-    invoke('fwd_key', { slot, kind: 'down', vk: e.keyCode, ch: 0, mods: mods(e, 0) });
-    if (e.key === 'Enter') invoke('fwd_key', { slot, kind: 'char', vk: 13, ch: 13, mods: mods(e, 0) });
-    else if (e.key.length === 1 && !e.ctrlKey && !e.altKey) invoke('fwd_key', { slot, kind: 'char', vk: e.key.charCodeAt(0), ch: e.key.charCodeAt(0), mods: mods(e, 0) });
+    invoke('fwd_key', { slot, kind: 'down', vk: e.keyCode, ch: 0, code: e.code, mods: mods(e, 0) });
+    if (e.key === 'Enter') invoke('fwd_key', { slot, kind: 'char', vk: 13, ch: 13, code: e.code, mods: mods(e, 0) });
+    else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) invoke('fwd_key', { slot, kind: 'char', vk: e.key.charCodeAt(0), ch: e.key.charCodeAt(0), code: e.code, mods: mods(e, 0) });
   });
-  ta.addEventListener('keyup', (e) => { if (!e.isComposing && e.keyCode !== 229) invoke('fwd_key', { slot, kind: 'up', vk: e.keyCode, ch: 0, mods: mods(e, 0) }); });
+  ta.addEventListener('keyup', (e) => { if (!e.isComposing && e.keyCode !== 229) invoke('fwd_key', { slot, kind: 'up', vk: e.keyCode, ch: 0, code: e.code, mods: mods(e, 0) }); });
   ta.addEventListener('compositionupdate', (e) => invoke('fwd_ime', { slot, kind: 'update', text: e.data || '' }));
   ta.addEventListener('compositionend', (e) => { invoke('fwd_ime', { slot, kind: 'commit', text: e.data || '' }); ta.value = ''; });
   return hit;
@@ -183,7 +197,7 @@ invoke('info').then((i) => {
   if (i.selftest) {
     // CI smoke run: drive the overlay buttons on a timer so screenshots can capture them. Not used on the PC.
     const r = (id) => { const b = $(id).getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; };
-    setTimeout(() => invoke('mark', { label: 'rects:' + JSON.stringify({ tip: r('bTip'), s0: r('s0'), s1: r('s1'), railTip2: r('rail') }) }), 3000);
+    setTimeout(() => invoke('mark', { label: 'rects:' + JSON.stringify({ inner: [innerWidth, innerHeight], tip: r('bTip'), s0: r('s0'), s1: r('s1'), railTip2: r('rail') }) }), 3000);
     const step = (ms, fn) => setTimeout(fn, ms);
     step(12000, () => $('bModal').click());
     step(16000, () => $('bClose').click());

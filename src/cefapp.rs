@@ -13,6 +13,17 @@ pub const PANE_COUNT: usize = 2;
 pub const SLOT_COUNT: usize = 3;
 pub const POPUP_SLOT: usize = 2;
 
+/// The CEF App. macOS (items.id=720) uses its own App with a BrowserProcessHandler for the external message pump.
+#[cfg(not(target_os = "macos"))]
+fn make_app() -> cef::App {
+    AppBuilder::build(SpikeApp)
+}
+
+#[cfg(target_os = "macos")]
+fn make_app() -> cef::App {
+    crate::macapp::make_app()
+}
+
 /// Runs CEF's subprocess entry point when this invocation is a CEF-spawned helper. Returns true when the
 /// caller must return from main() immediately.
 pub fn dispatch_subprocess(sandbox_info: *mut u8) -> bool {
@@ -24,7 +35,7 @@ pub fn dispatch_subprocess(sandbox_info: *mut u8) -> bool {
     let type_switch = cef::CefString::from("type");
     let is_browser_process = cmd.has_switch(Some(&type_switch)) != 1;
 
-    let mut app = AppBuilder::build(SpikeApp);
+    let mut app = make_app();
     let ret = cef::execute_process(Some(args.as_main_args()), Some(&mut app), sandbox_info);
 
     if is_browser_process {
@@ -42,7 +53,7 @@ pub fn dispatch_subprocess(sandbox_info: *mut u8) -> bool {
 /// Jason's own browser data).
 pub fn initialize(cli: &Cli, root_cache: &Path, sandbox_info: *mut u8) -> bool {
     let args = Args::new();
-    let mut app = AppBuilder::build(SpikeApp);
+    let mut app = make_app();
     let root = root_cache.to_string_lossy().into_owned();
     let log_file = root_cache
         .parent()
@@ -196,9 +207,26 @@ fn child_window_info(parent: isize, b: (i32, i32, i32, i32), runtime: Runtime) -
     wi
 }
 
-#[cfg(not(windows))]
+/// macOS (items.id=720): `parent` is the window's content NSView; CEF adds its own NSView as a subview.
+#[cfg(target_os = "macos")]
+fn child_window_info(parent: isize, b: (i32, i32, i32, i32), runtime: Runtime) -> WindowInfo {
+    let rect = Rect {
+        x: b.0,
+        y: b.1,
+        width: b.2,
+        height: b.3,
+    };
+    let mut wi = WindowInfo::default().set_as_child(parent as cef::sys::cef_window_handle_t, &rect);
+    wi.runtime_style = match runtime {
+        Runtime::Alloy => RuntimeStyle::ALLOY,
+        Runtime::Chrome => RuntimeStyle::CHROME,
+    };
+    wi
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn child_window_info(_parent: isize, _b: (i32, i32, i32, i32), _runtime: Runtime) -> WindowInfo {
-    unimplemented!("windowed CEF children are Windows-only in this spike")
+    unimplemented!("windowed CEF children are Windows/macOS-only in this spike")
 }
 
 /// Mode A: asks CEF to create pane `idx` as a native child window of `parent` (the Tauri window's HWND).
@@ -258,6 +286,15 @@ pub fn pane_browser(idx: usize) -> Option<Browser> {
 pub fn pane_hwnd(idx: usize) -> Option<isize> {
     let b = pane_browser(idx)?;
     Some(b.host()?.window_handle().0 as isize)
+}
+
+/// The NSView CEF created for a windowed pane (mode a on macOS), once on_after_created has run.
+#[cfg(target_os = "macos")]
+pub fn pane_view(idx: usize) -> Option<*mut std::ffi::c_void> {
+    let b = pane_browser(idx)?;
+    let h = b.host()?.window_handle();
+    let p = h as *mut std::ffi::c_void;
+    (!p.is_null()).then_some(p)
 }
 
 pub fn navigate_pane(idx: usize, url: &str) -> bool {

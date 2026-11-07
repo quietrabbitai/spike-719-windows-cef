@@ -26,8 +26,12 @@ pub struct Gpu {
 
 impl Gpu {
     pub fn new() -> Result<Gpu, String> {
+        #[cfg(windows)]
+        let backends = wgpu::Backends::DX12;
+        #[cfg(target_os = "macos")]
+        let backends = wgpu::Backends::METAL;
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::DX12,
+            backends,
             flags: wgpu::InstanceFlags::empty(),
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
@@ -190,7 +194,13 @@ impl Gpu {
 }
 
 pub enum Cmd {
+    /// Windows: the render thread creates the swapchain for the child HWND.
+    #[cfg(windows)]
     Add { slot: usize, hwnd: isize },
+    /// macOS: wgpu requires surface creation on the main thread (it touches the NSView), so the main thread
+    /// creates the surface and hands it over.
+    #[cfg(target_os = "macos")]
+    AddSurface { slot: usize, surface: wgpu::Surface<'static> },
     Remove { slot: usize },
 }
 
@@ -206,6 +216,22 @@ struct PaneSurf {
     present_ms: Vec<f32>,
 }
 
+/// macOS: surface for a plain NSView (wgpu installs a CAMetalLayer on it). Main thread only.
+#[cfg(target_os = "macos")]
+pub fn create_surface_for_view(gpu: &Gpu, view: *mut std::ffi::c_void) -> Result<wgpu::Surface<'static>, String> {
+    use wgpu::rwh::{AppKitDisplayHandle, AppKitWindowHandle, RawDisplayHandle, RawWindowHandle};
+    let nn = std::ptr::NonNull::new(view).ok_or("null view")?;
+    unsafe {
+        gpu.instance
+            .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: Some(RawDisplayHandle::AppKit(AppKitDisplayHandle::new())),
+                raw_window_handle: RawWindowHandle::AppKit(AppKitWindowHandle::new(nn)),
+            })
+    }
+    .map_err(|e| format!("create_surface: {e}"))
+}
+
+#[cfg(windows)]
 fn create_surface(gpu: &Gpu, hwnd: isize) -> Result<wgpu::Surface<'static>, String> {
     use wgpu::rwh::{RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle};
     let nz = NonZeroIsize::new(hwnd).ok_or("null hwnd")?;
@@ -253,7 +279,7 @@ pub fn spawn(gpu: Arc<Gpu>, rx: Receiver<Cmd>, profile: PathBuf) {
             if let Some(f) = csv.as_mut() {
                 let _ = writeln!(
                     f,
-                    "t_ms,slot,cef_paints_per_s,paint_gap_avg_ms,paint_gap_p95_ms,paint_gap_max_ms,present_avg_ms,present_max_ms,import_ok,import_err"
+                    "t_ms,slot,cef_paints_per_s,paint_gap_avg_ms,paint_gap_p95_ms,paint_gap_max_ms,present_avg_ms,present_max_ms,import_ok,import_err,stretched_frames_total"
                 );
             }
             let frame_dt = Duration::from_micros(16_667);
@@ -263,6 +289,16 @@ pub fn spawn(gpu: Arc<Gpu>, rx: Receiver<Cmd>, profile: PathBuf) {
                 // Commands
                 loop {
                     match rx.try_recv() {
+                        #[cfg(target_os = "macos")]
+                        Ok(Cmd::AddSurface { slot, surface }) => {
+                            panes[slot] = PaneSurf {
+                                surface: Some(surface),
+                                need_draw: true,
+                                ..Default::default()
+                            };
+                            log::info!("render: surface added for slot {slot}");
+                        }
+                        #[cfg(windows)]
                         Ok(Cmd::Add { slot, hwnd }) => match create_surface(&gpu, hwnd) {
                             Ok(s) => {
                                 panes[slot] = PaneSurf {
@@ -396,11 +432,11 @@ pub fn spawn(gpu: Arc<Gpu>, rx: Receiver<Cmd>, profile: PathBuf) {
                         if ps.surface.is_none() {
                             continue;
                         }
-                        let (mut gaps, paints, ok, err) = crate::bshared::with_slot(i, |s| {
+                        let (mut gaps, paints, ok, err, mism) = crate::bshared::with_slot(i, |s| {
                             let g = std::mem::take(&mut s.gaps_ms);
                             let n = s.paints;
                             s.paints = 0;
-                            (g, n, s.import_ok, s.import_err)
+                            (g, n, s.import_ok, s.import_err, s.mismatch)
                         })
                         .unwrap_or_default();
                         let avg = if gaps.is_empty() { 0.0 } else { gaps.iter().sum::<f32>() / gaps.len() as f32 };
@@ -416,8 +452,8 @@ pub fn spawn(gpu: Arc<Gpu>, rx: Receiver<Cmd>, profile: PathBuf) {
                         if let Some(f) = csv.as_mut() {
                             let _ = writeln!(
                                 f,
-                                "{},{},{},{:.2},{:.2},{:.2},{:.2},{:.2},{},{}",
-                                spikelog::now_ms(), i, paints, avg, p95, max, pavg, pmax, ok, err
+                                "{},{},{},{:.2},{:.2},{:.2},{:.2},{:.2},{},{},{}",
+                                spikelog::now_ms(), i, paints, avg, p95, max, pavg, pmax, ok, err, mism
                             );
                             let _ = f.flush();
                         }

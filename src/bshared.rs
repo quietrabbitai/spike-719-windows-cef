@@ -43,6 +43,11 @@ pub struct Slot {
     pub cursor_css: &'static str,
     /// Raw HCURSOR for the native-input (above) placement.
     pub hcursor: isize,
+    /// items.id=720 instrumentation: paints whose size differs from the pane's target pixel size (stretched
+    /// frames during a resize), the time a size change was requested, and the last logged frame size.
+    pub mismatch: u64,
+    pub resize_pending: Option<(Instant, (u32, u32))>,
+    pub last_frame: (u32, u32),
 }
 
 impl Slot {
@@ -65,6 +70,9 @@ impl Slot {
             selected_text: String::new(),
             cursor_css: "default",
             hcursor: 0,
+            mismatch: 0,
+            resize_pending: None,
+            last_frame: (0, 0),
         }
     }
 }

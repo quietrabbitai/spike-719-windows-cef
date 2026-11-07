@@ -5,7 +5,11 @@ use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+#[cfg(windows)]
 use cef::sys::HCURSOR;
+/// macOS: cef_cursor_handle_t is an NSCursor pointer; only the CSS cursor name is used in the below placement.
+#[cfg(target_os = "macos")]
+type HCURSOR = *mut u8;
 use cef::Frame as CefFrame;
 use cef::*;
 use tauri::{AppHandle, Emitter};
@@ -22,7 +26,7 @@ pub struct BSlot {
     pub slot: usize,
 }
 
-fn record_paint(slot: usize) {
+fn record_paint(slot: usize, w: u32, h: u32) {
     with_slot(slot, |s| {
         let now = Instant::now();
         if let Some(prev) = s.last_paint {
@@ -31,6 +35,28 @@ fn record_paint(slot: usize) {
         }
         s.last_paint = Some(now);
         s.paints += 1;
+        // items.id=720 instrumentation. A frame whose size is not the pane's target pixel size is shown stretched
+        // (during resize); the first frame at the new size ends the resize latency measurement; every new frame
+        // size is logged next to the view's pixel size and scale (the Retina evidence).
+        if s.pix != (0, 0) && (w, h) != s.pix {
+            s.mismatch += 1;
+        }
+        if let Some((t0, target)) = s.resize_pending {
+            if (w, h) == target {
+                s.resize_pending = None;
+                crate::spikelog::event(
+                    "resize_latency_ms",
+                    &format!("slot={slot} {:.1} size={w}x{h}", t0.elapsed().as_secs_f64() * 1000.0),
+                );
+            }
+        }
+        if s.last_frame != (w, h) {
+            s.last_frame = (w, h);
+            crate::spikelog::event(
+                "frame_size",
+                &format!("slot={slot} frame={w}x{h} view_pix={}x{} scale={}", s.pix.0, s.pix.1, s.scale),
+            );
+        }
     });
 }
 
@@ -59,6 +85,15 @@ wrap_render_handler! {
         ) -> ::std::os::raw::c_int {
             let Some(si) = screen_info else { return false as _ };
             si.device_scale_factor = with_slot(self.handler.slot, |s| s.scale).unwrap_or(1.0);
+            // macOS (items.id=720): fill the screen geometry too (DIP); a zero rect is not trusted there.
+            #[cfg(target_os = "macos")]
+            {
+                let (w, h) = bshared::view_dip(self.handler.slot);
+                si.depth = 24;
+                si.depth_per_component = 8;
+                si.rect = Rect { x: 0, y: 0, width: w, height: h };
+                si.available_rect = Rect { x: 0, y: 0, width: w, height: h };
+            }
             true as _
         }
 
@@ -72,9 +107,11 @@ wrap_render_handler! {
         ) -> ::std::os::raw::c_int {
             let (Some(sx), Some(sy)) = (screen_x, screen_y) else { return false as _ };
             let scale = with_slot(self.handler.slot, |s| s.scale).unwrap_or(1.0);
-            let (ox, oy) = crate::bwin::slot_origin(self.handler.slot);
-            *sx = ox + (view_x as f32 * scale) as i32;
-            *sy = oy + (view_y as f32 * scale) as i32;
+            // Windows screen coordinates are physical pixels; macOS screen coordinates are points (= DIP).
+            let k = if cfg!(windows) { scale } else { 1.0 };
+            let (ox, oy) = crate::plat::slot_origin(self.handler.slot);
+            *sx = ox + (view_x as f32 * k) as i32;
+            *sy = oy + (view_y as f32 * k) as i32;
             true as _
         }
 
@@ -113,7 +150,7 @@ wrap_render_handler! {
                     s.popup.frame = Some(PopupFrame { frame, dirty: true });
                 });
             } else {
-                record_paint(self.handler.slot);
+                record_paint(self.handler.slot, width as u32, height as u32);
                 with_slot(self.handler.slot, |s| s.frame = Some(frame));
             }
         }
@@ -136,7 +173,7 @@ wrap_render_handler! {
                             s.popup.frame = Some(PopupFrame { frame: Frame::Gpu { tex }, dirty: true });
                         });
                     } else {
-                        record_paint(slot);
+                        record_paint(slot, info.extra.coded_size.width as u32, info.extra.coded_size.height as u32);
                         with_slot(slot, |s| {
                             s.import_ok += 1;
                             s.frame = Some(Frame::Gpu { tex });
@@ -237,7 +274,7 @@ wrap_context_menu_handler! {
             let Some(app) = APP.get() else { return 0 };
             // The Win32 menu must run on the thread that owns the parent window.
             let _ = app.run_on_main_thread(move || {
-                crate::bwin::show_context_menu(slot, x, y, editable, !sel.is_empty(), callback);
+                crate::plat::show_context_menu(slot, x, y, editable, !sel.is_empty(), callback);
             });
             1
         }
@@ -257,7 +294,7 @@ wrap_life_span_handler! {
             log::info!("slot {} windowless browser created", self.handler.slot);
             cefapp::register(self.handler.slot, browser.clone());
             if self.handler.slot == POPUP_SLOT {
-                crate::bwin::popup_opened();
+                crate::plat::popup_opened();
             }
         }
 
@@ -265,7 +302,7 @@ wrap_life_span_handler! {
             log::info!("slot {} windowless browser closed", self.handler.slot);
             cefapp::unregister(self.handler.slot);
             if self.handler.slot == POPUP_SLOT {
-                crate::bwin::popup_closed();
+                crate::plat::popup_closed();
             }
         }
 
@@ -353,8 +390,12 @@ fn windowless_info(wi: &mut WindowInfo, cli: &Cli) {
         Runtime::Chrome => RuntimeStyle::CHROME,
     };
     #[cfg(windows)]
-    if let Some(st) = crate::bwin::state() {
+    if let Some(st) = crate::plat::state() {
         wi.parent_window = cef::sys::HWND(st.parent as *mut cef::sys::HWND__);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(st) = crate::plat::state() {
+        wi.parent_view = st.content as *mut std::ffi::c_void;
     }
 }
 
@@ -537,7 +578,7 @@ pub fn edit_command(slot: usize, cmd: &str) {
         "copy" => {
             let text = with_slot(slot, |s| s.selected_text.clone()).unwrap_or_default();
             if !text.is_empty() {
-                crate::bwin::write_clipboard(&text);
+                crate::plat::write_clipboard(&text);
             }
         }
         _ => {
@@ -548,7 +589,7 @@ pub fn edit_command(slot: usize, cmd: &str) {
                 "cut" => {
                     let text = with_slot(slot, |s| s.selected_text.clone()).unwrap_or_default();
                     if !text.is_empty() {
-                        crate::bwin::write_clipboard(&text);
+                        crate::plat::write_clipboard(&text);
                     }
                     f.cut();
                 }

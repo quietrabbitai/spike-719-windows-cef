@@ -19,20 +19,31 @@ crate-type = ["cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `macos-private-api` (items.id=720): required for a transparent WKWebView on macOS. COMPROMISE (private API, a Mac
+# App Store blocker). tauri-build checks only this table, so it is enabled for every platform; it is a no-op on Windows.
+tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 # cef's texture importer logs through `tracing`; the `log` feature forwards those to our file logger, which is
 # how a silent fallback to its black CPU placeholder texture gets noticed.
 tracing = { version = "0.1", features = ["log"] }
-wgpu = { version = "30", default-features = false, features = ["dx12", "wgsl", "std", "parking_lot"] }
+# Backend features are per OS (items.id=720): dx12 on Windows (unchanged), metal on macOS.
+wgpu = { version = "30", default-features = false, features = ["wgsl", "std", "parking_lot"] }
 pollster = "0.4"
 # Same pins as quietrabbit-core. `sandbox` makes cef-dll-sys build libcef_dll_wrapper with USE_SANDBOX
 # (decisions.id=860: the Chromium sandbox stays enabled).
 cef = { version = "151.1.0", features = ["sandbox", "accelerated_osr"] }
 
+# items.id=720 (macOS).
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["metal"] }
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+
 [target.'cfg(windows)'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["dx12"] }
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dxgi",

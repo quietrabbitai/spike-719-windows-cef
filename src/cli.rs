@@ -78,8 +78,17 @@ pub enum ZOrder {
     Keep,
 }
 
+/// macOS (items.id=720): where the window opens. `Virtual2x` needs a 2x display (tools/vdisplay) and fails closed
+/// when there is none.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Screen {
+    Main,
+    Virtual2x,
+}
+
 #[derive(Clone, Debug)]
 pub struct Cli {
+    pub screen: Screen,
     pub a_zorder: ZOrder,
     pub size: (f64, f64),
     pub mode: Mode,
@@ -104,13 +113,15 @@ pub fn init(cli: Cli) {
 
 pub fn parse() -> Result<Cli, String> {
     let mut cli = Cli {
+        screen: Screen::Main,
         a_zorder: ZOrder::Raise,
         size: (1280.0, 800.0),
         mode: Mode::A,
-        cef_loop: CefLoop::Mt,
+        // macOS has no multi-threaded CEF loop (CEF's UI thread must be the main thread): external pump only.
+        cef_loop: if cfg!(target_os = "macos") { CefLoop::Pump } else { CefLoop::Mt },
         runtime: Runtime::Alloy,
         modal_policy: ModalPolicy::None,
-        profile: std::env::temp_dir().join("qr-spike-719"),
+        profile: std::env::temp_dir().join(if cfg!(target_os = "macos") { "qr-spike-720" } else { "qr-spike-719" }),
         diag_no_sandbox: false,
         soak: false,
     };
@@ -159,6 +170,13 @@ pub fn parse() -> Result<Cli, String> {
                     h.parse().map_err(|_| format!("bad --size={v}"))?,
                 );
             }
+            "--screen" => {
+                cli.screen = match v.as_str() {
+                    "main" => Screen::Main,
+                    "virtual2x" => Screen::Virtual2x,
+                    _ => return Err(format!("unknown --screen={v}")),
+                }
+            }
             "--profile" => cli.profile = PathBuf::from(v),
             "--diag-no-sandbox" => cli.diag_no_sandbox = true,
             "--soak" => cli.soak = true,
@@ -169,5 +187,19 @@ pub fn parse() -> Result<Cli, String> {
     // CI smoke finding: explicitly requesting the Chrome runtime style for a windowless browser makes CEF 151 log
     // "Chrome style is not supported for this browser" and fall back, so Alloy is the honest default for B too.
     let _ = runtime_set;
+    // items.id=720 short scope (decided with Jason): macOS builds a, b-sw-below, b-gpu-below only. Refuse the rest
+    // instead of silently running something else.
+    #[cfg(target_os = "macos")]
+    {
+        if matches!(cli.mode, Mode::BSwAbove | Mode::BGpuAbove) {
+            return Err(format!(
+                "--mode={} is not built on macOS (outside the items.id=720 short scope); use a, b-sw-below or b-gpu-below",
+                cli.mode.as_str()
+            ));
+        }
+        if cli.cef_loop == CefLoop::Mt {
+            return Err("--cef-loop=mt does not exist on macOS (CEF's UI thread must be the main thread)".into());
+        }
+    }
     Ok(cli)
 }

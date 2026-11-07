@@ -4,14 +4,31 @@ pub mod cli;
 pub mod localserver;
 pub mod spikelog;
 
-#[cfg(windows)]
+// bcef/bgpu/bshared are shared by the Windows and macOS hosts (items.id=720); bwin/host/winenv are Windows-only,
+// bmac/macapp/macmain/host_mac/macenv are macOS-only. `plat` is whichever platform module the shared code calls.
+#[cfg(any(windows, target_os = "macos"))]
 pub mod bcef;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub mod bgpu;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub mod bshared;
 #[cfg(windows)]
 pub mod bwin;
+#[cfg(windows)]
+pub use bwin as plat;
+
+#[cfg(target_os = "macos")]
+pub mod bmac;
+#[cfg(target_os = "macos")]
+pub use bmac as plat;
+#[cfg(target_os = "macos")]
+pub mod host_mac;
+#[cfg(target_os = "macos")]
+pub mod macapp;
+#[cfg(target_os = "macos")]
+pub mod macenv;
+#[cfg(target_os = "macos")]
+pub mod macmain;
 #[cfg(windows)]
 pub mod host;
 #[cfg(windows)]
