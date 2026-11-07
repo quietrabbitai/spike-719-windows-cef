@@ -435,7 +435,16 @@ pub fn run(cli: Cli) {
             log::info!("{}", macapp::describe_nsapp());
 
             for (i, f) in layout.iter().enumerate().take(cefapp::PANE_COUNT) {
-                let url = format!("http://127.0.0.1:{port}/?pane={i}");
+                // SPIKE720_PANE<i>_URL: start pane i on a provider page (needed for mode a with the WKWebView hidden, where the
+                // toolbar dropdown is not visible). Same allowlist as navigate_pane; anything else is refused (fail closed).
+                let url = match std::env::var(format!("SPIKE720_PANE{i}_URL")) {
+                    Ok(u) if ["https://claude.ai/", "https://chatgpt.com/", "https://gemini.google.com/"].contains(&u.as_str()) => {
+                        spikelog::event("start_url", &format!("pane={i} {u}"));
+                        u
+                    }
+                    Ok(u) => fatal(&format!("SPIKE720_PANE{i}_URL={u} is not an allowed address")),
+                    Err(_) => format!("http://127.0.0.1:{port}/?pane={i}"),
+                };
                 let ok = if windowless {
                     crate::bcef::create_windowless_pane(cli, i, &url, &root_cache)
                 } else {
