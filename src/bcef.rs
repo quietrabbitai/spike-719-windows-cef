@@ -26,6 +26,24 @@ pub struct BSlot {
     pub slot: usize,
 }
 
+/// items.id=720 diagnostics (SPIKE720_DUMP_FRAMES=<dir>): writes pane 0's raw software frames as grayscale PGM files while
+/// DUMP_ON is set (max 150), so the pixels CEF itself produces can be analysed (is the "line shift" in CEF's output?).
+pub static DUMP_DIR: OnceLock<String> = OnceLock::new();
+pub static DUMP_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DUMP_N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn dump_frame(px: &[u8], w: u32, h: u32) {
+    use std::sync::atomic::Ordering;
+    let Some(dir) = DUMP_DIR.get() else { return };
+    let n = DUMP_N.fetch_add(1, Ordering::Relaxed);
+    if n >= 150 {
+        return;
+    }
+    let mut out = format!("P5\n{w} {h}\n255\n").into_bytes();
+    out.extend(px.chunks_exact(4).map(|p| ((114 * p[0] as u32 + 587 * p[1] as u32 + 299 * p[2] as u32) / 1000) as u8));
+    let _ = std::fs::write(format!("{dir}/f{n:04}.pgm"), out);
+}
+
 fn record_paint(slot: usize, w: u32, h: u32) {
     with_slot(slot, |s| {
         let now = Instant::now();
@@ -144,6 +162,9 @@ wrap_render_handler! {
                 return;
             }
             let px = unsafe { std::slice::from_raw_parts(buffer, (width * height * 4) as usize) }.to_vec();
+            if type_ != PaintElementType::POPUP && self.handler.slot == 0 && DUMP_ON.load(std::sync::atomic::Ordering::Relaxed) {
+                dump_frame(&px, width as u32, height as u32);
+            }
             let frame = Frame::Software { px, w: width as u32, h: height as u32 };
             if type_ == PaintElementType::POPUP {
                 with_slot(self.handler.slot, |s| {

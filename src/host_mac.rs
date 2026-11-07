@@ -521,6 +521,43 @@ pub fn run(cli: Cli) {
                     spikelog::event("keytest", "done");
                 });
             }
+            // Frame-dump experiment (b-sw-below only; SPIKE720_DUMP_FRAMES=<dir>, SPIKE720_DUMP_MODE=js|wheel): scrolls the
+            // list at the bottom of pane 0 either from JavaScript (no input path) or with a 60 Hz wheel stream through
+            // fwd_wheel, and dumps CEF's raw frames for offline analysis.
+            if windowless {
+                if let Ok(dir) = std::env::var("SPIKE720_DUMP_FRAMES") {
+                    let _ = std::fs::create_dir_all(&dir);
+                    let _ = crate::bcef::DUMP_DIR.set(dir);
+                    let wheel = std::env::var("SPIKE720_DUMP_MODE").map(|m| m == "wheel").unwrap_or(false);
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs(6));
+                        use cef::ImplFrame;
+                        let js = |code: &str| {
+                            if let Some(f) = cefapp::pane_browser(0).and_then(|b| b.main_frame()) {
+                                f.execute_java_script(Some(&cef::CefString::from(code)), None, 0);
+                            }
+                        };
+                        js("window.scrollTo(0, document.body.scrollHeight)");
+                        std::thread::sleep(Duration::from_millis(800));
+                        spikelog::event("dump", &format!("start mode={}", if wheel { "wheel" } else { "js" }));
+                        crate::bcef::DUMP_ON.store(true, std::sync::atomic::Ordering::Relaxed);
+                        if wheel {
+                            let t0 = std::time::Instant::now();
+                            while t0.elapsed() < Duration::from_secs(3) {
+                                let _ = handle.run_on_main_thread(|| fwd_wheel(0, 200.0, 560.0, 0.0, 20.0, DomMods::default()));
+                                std::thread::sleep(Duration::from_micros(16_667));
+                            }
+                        } else {
+                            js("(function(){var sc=document.getElementById('scroll');var t0=performance.now();var dir=1;function step(){if(performance.now()-t0<3000){sc.scrollTop+=dir*3;if(sc.scrollTop>=sc.scrollHeight-sc.clientHeight||sc.scrollTop<=0)dir=-dir;requestAnimationFrame(step);}}requestAnimationFrame(step);})()");
+                            std::thread::sleep(Duration::from_secs(3));
+                        }
+                        std::thread::sleep(Duration::from_millis(500));
+                        crate::bcef::DUMP_ON.store(false, std::sync::atomic::Ordering::Relaxed);
+                        spikelog::event("dump", "end");
+                    });
+                }
+            }
             // Self-test of scroll smoothness (b-* modes, SPIKE720_SELFTEST): a controlled wheel stream at 120 Hz into
             // pane 0 through fwd_wheel (the IPC path), alternating 50 events down / 50 up so content keeps moving. The
             // window is marked in events.csv; read paints/s and gaps from frames.csv for slot 0 in that window.
