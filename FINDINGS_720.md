@@ -70,9 +70,9 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    signature as the SIGTERM crashes). The log shows the 3 s wait for the windowed browsers to close timing out
    (`all browsers closed=false`), the browsers closing 214 ms later, and then no `cef::shutdown returned`. Windowed panes take
    ~3.2 s to close, so `cef::shutdown` may run while a close is still completing; not proven, and earlier mode `a` quits
-   were clean, so it is intermittent. **It happened again on Jason's second mode `a` run** (Gemini loaded, ~230 s, quit with Ctrl+Q/Cmd+Q: Jason wrote "control q"
-   and saw an error; the log shows the quit path ran and ended without `cef::shutdown returned`, matching a crash dialog
-   and a new report): same SIGTRAP signature, same sequence. So both of Jason's mode `a` quits crashed, while my own short
+   were clean, so it is intermittent. **It happened again on Jason's second mode `a` run** (Gemini loaded, ~230 s; Jason tried several keys while remembering the macOS quit command
+   (Cmd+Q), so **which key ended the run is unknown**, and saw an error; the log shows the quit path ran and ended without
+   `cef::shutdown returned`, matching a crash dialog and a new report): same SIGTRAP signature, same sequence. So both of Jason's mode `a` quits crashed, while my own short
    mode `a` runs (10-20 s, local pages) exited cleanly; what differs (run length, page content, how it was quit) is not
    isolated. Reports saved in `results/crash/check-run-20261106/` (local, gitignored); the crash count is now 18. The first runs also crashed from a class swap I made on a
    KVO-wrapped WKWebView (fixed).
@@ -108,7 +108,7 @@ No OOM; swap was 0 before and about 17 MB after the session; peak memory was not
 
 ## Not verified / open
 - Gemini login: details beyond "worked" for `b-gpu-below`; whether the mode `a` crash depends on run length, page content or
-  the quit method (Ctrl+Q versus Cmd+Q versus menu, which Jason should confirm); passkeys with a properly signed build.
+  the quit method (unknown for Jason's runs: he tried several keys; in my runs the menu Quit and an app-driven exit were clean in the B modes, and Cmd+Q itself was never pressed by me); passkeys with a properly signed build.
 - Trackpad scrolling (no trackpad on this Mac; production Macs have one); real Retina panel; notarization and Gatekeeper with a Developer ID; IME composition; mixed DPI; soak.
 - The Windows build was not rebuilt or run on this Mac after the shared-file edits.
 - Why the WKWebView blocks input to windowed CEF views in mode `a`; root cause of the scroll-start stall.
