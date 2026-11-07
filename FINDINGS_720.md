@@ -27,8 +27,9 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
 | Scroll, identical real input, page-side updates per gesture | 20 in 0.32 s (63/s, worst gap 18 ms) with the WKWebView hidden | 3 (~12/s, worst gap 117-135 ms) | 3 (~12.8/s, worst gap 117-133 ms) |
 | Retina (virtual 2x display, instrumentation only) | scale and placement logged | frame = view pixels = drawable (1126x1290 for a 563.2x645.1 pt pane); DIP-to-pixel for IPC and real clicks correct | same |
 | Chromium sandbox ON (decisions.id=860) | not run in `a` | children sandboxed | children sandboxed (browser process is not, as on macOS generally) |
+| Passkey / WebAuthn | not available (finding 7) | not available (same log lines) | not available (same log lines) |
 | Signing | ad-hoc and hardened-runtime builds launch and sandbox; Gatekeeper rejects both (no Developer ID); notarization not tested | | |
-| Gemini login (throwaway account) | Gemini loaded in pane 1 through the new start-up URL option (logged). Jason: **"The login said account was recovered."** No block message was reported; whether it reached the chat is not stated. The quit and crash outcome of this run was not reported yet (the app was still open when last checked) | not run | **worked** (Jason: "check 1 worked"; no further detail such as block text was reported) |
+| Gemini login (throwaway account) | Gemini loaded in pane 1 through the new start-up URL option (logged). Jason: **"The login said account was recovered."**; Google then offered a passkey, and accepting it said the passkey is not on this device; **"Sign in another way" with password + 2FA worked** (no "browser not secure" block reported). Passkeys cannot work in this build (finding 7). Quitting this run **crashed** (finding 5) | not run | **worked** (Jason: "check 1 worked"; no further detail such as block text was reported) |
 | Real-input scroll, **mouse and keyboard (no trackpad available)** (Jason) | not run | Jason: scrolling the **whole page** was smooth (seemed smoother than before); the **list inside the pane** was smoother too but **still shows the line shift, the same with the mouse wheel and with keyboard scrolling** (cause not isolated). Page-side log: one 8.95 s gesture = 462 updates, 51.6/s, p95 gap 19 ms, worst 403 ms; six other gestures 6-22 updates/s with worst gaps 600-765 ms. The page does not tag the input device, so which gesture was wheel, scrollbar drag or keyboard is not known | not run |
 | Trackpad scroll (inertia, phases) | **not tested: no trackpad on this Mac** | | |
 | Real-panel Retina | **not tested** (no Retina display; the virtual display is a compromise) | | |
@@ -69,12 +70,21 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    signature as the SIGTERM crashes). The log shows the 3 s wait for the windowed browsers to close timing out
    (`all browsers closed=false`), the browsers closing 214 ms later, and then no `cef::shutdown returned`. Windowed panes take
    ~3.2 s to close, so `cef::shutdown` may run while a close is still completing; not proven, and earlier mode `a` quits
-   were clean, so it is intermittent. Report saved in `results/crash/check-run-20261106/` (local, gitignored); the crash count
-   is now 17. The first runs also crashed from a class swap I made on a
+   were clean, so it is intermittent. **It happened again on Jason's second mode `a` run** (Gemini loaded, ~230 s, quit with Ctrl+Q/Cmd+Q: Jason wrote "control q"
+   and saw an error; the log shows the quit path ran and ended without `cef::shutdown returned`, matching a crash dialog
+   and a new report): same SIGTRAP signature, same sequence. So both of Jason's mode `a` quits crashed, while my own short
+   mode `a` runs (10-20 s, local pages) exited cleanly; what differs (run length, page content, how it was quit) is not
+   isolated. Reports saved in `results/crash/check-run-20261106/` (local, gitignored); the crash count is now 18. The first runs also crashed from a class swap I made on a
    KVO-wrapped WKWebView (fixed).
 6. **Not a pane problem but needed:** the content view runs under the title bar, so the page's layout area is the window's
    `contentLayoutRect` (768 pt of 800), not the full content view. The first geometry used the full view and every pane click
    landed ~30 pt off; fixed.
+7. **Passkeys do not work in this build, in any mode.** CEF's log says the Touch ID authenticator is unavailable because the
+   `keychain-access-group` entitlement is missing or incorrect (expected value `.org.chromium.Chromium.webauthn`), and the
+   Bluetooth (phone) route is unavailable because the process has no Bluetooth metadata and was launched from Terminal. The
+   spike is ad-hoc signed with no entitlements and run as a bare executable. Jason saw this as "passkey is not on this
+   device" after Google offered a passkey; password + 2FA worked. What a properly signed production build needs for
+   passkeys is **not tested** here.
 
 ## Compromises found (each is a compromise, none worked around silently)
 1. `tauri/macos-private-api` + `macOSPrivateApi` for a transparent WKWebView: private API, a Mac App Store blocker (enabled
@@ -88,6 +98,7 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
 6. Virtual 2x display is not a real panel. 7. Ad-hoc signature only; Chromium logs a signature-validation error at start.
 8. Key events need the character on both down and up events (finding 4), and DOM `code` to macOS key-code mapping lives in
    the host (`kvk`, ANSI layout only).
+9. No passkeys: the build is ad-hoc signed with no `keychain-access-group` entitlement and run as a bare executable (finding 7).
 
 ## Reported, never deciding
 Code: ~1,640 lines of new Rust for the macOS host (bmac 571, macapp 309, host_mac 607 incl. self-tests and experiments,
@@ -96,8 +107,8 @@ macenv 81, macmain 52, bins 21) plus ~170 lines of tools; shared files touched a
 No OOM; swap was 0 before and about 17 MB after the session; peak memory was not measured.
 
 ## Not verified / open
-- Gemini login: details beyond "worked" (`b-gpu-below`) and "the login said account was recovered" (mode `a`, WKWebView
-  hidden); the quit and crash outcome of the mode `a` run.
+- Gemini login: details beyond "worked" for `b-gpu-below`; whether the mode `a` crash depends on run length, page content or
+  the quit method (Ctrl+Q versus Cmd+Q versus menu, which Jason should confirm); passkeys with a properly signed build.
 - Trackpad scrolling (no trackpad on this Mac; production Macs have one); real Retina panel; notarization and Gatekeeper with a Developer ID; IME composition; mixed DPI; soak.
 - The Windows build was not rebuilt or run on this Mac after the shared-file edits.
 - Why the WKWebView blocks input to windowed CEF views in mode `a`; root cause of the scroll-start stall.
