@@ -83,6 +83,20 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    mode `a` runs (10-20 s, local pages) exited cleanly; what differs (run length, page content, how it was quit) is not
    isolated. Reports saved in `results/crash/check-run-20261106/` (local, gitignored); the crash count is now 18. A later menu quit of mode `a` with the WKWebView hidden (about 55 s, local pages, my run) was clean. The first runs also crashed from a class swap I made on a
    KVO-wrapped WKWebView (fixed).
+   **Reproduction of the Cmd+Q crash (mode `a`, WKWebView hidden, computer-controlled, no source change):** with a live Gemini
+   page (not signed in) Cmd+Q crashed 2 of 3 times; with the local test page it crashed 3 of 3 times, and a fourth run died with
+   SIGTRAP (exit 133) but wrote no report (`about:blank` as the pane URL is refused by the start-up URL allowlist, so the local
+   page was the closest control). Quitting the same build through the **menu** item was clean 3 of 3 (exit 0, no report). Every
+   report from that evening, mine and Jason's (7), has identical top-15 frames: `EXC_BREAKPOINT`/SIGTRAP on `CrBrowserMain`
+   (the main thread), six frames inside the CEF framework (stripped, so the names are only the nearest exports), then
+   `host_mac::run`'s exit closure, tao `AppState::exit`, `applicationWillTerminate`. The `process_requirement.cc:159 ... -67030`
+   line is printed at launch in every run, including the clean ones, so it is not the cause. **The live page is not needed;**
+   the discriminator is the quit method (key versus menu). Unproven hypothesis: with Cmd+Q, `terminate:` runs inside the key
+   event's `sendEvent:` dispatch (where my wrapper holds the "handling send event" flag) and CEF's shutdown then runs nested,
+   which the menu path avoids. The one clean Cmd+Q (live run 3) is unexplained; Jason noticed an earlier crash dialog still on
+   screen at that moment, which may be coincidence.
+   In `b-sw-below` and `b-gpu-below` (local test page, fresh profile each time) Cmd+Q was clean 8 of 8 (4 each, exit 0, no
+   reports), so the crash needs mode `a`'s windowed panes as well as the key path; the quit method alone does not explain it.
 6. **Not a pane problem but needed:** the content view runs under the title bar, so the page's layout area is the window's
    `contentLayoutRect` (768 pt of 800), not the full content view. The first geometry used the full view and every pane click
    landed ~30 pt off; fixed.
