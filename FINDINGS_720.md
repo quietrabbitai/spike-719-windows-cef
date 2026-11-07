@@ -29,7 +29,8 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
 | Chromium sandbox ON (decisions.id=860) | not run in `a` | children sandboxed | children sandboxed (browser process is not, as on macOS generally) |
 | Signing | ad-hoc and hardened-runtime builds launch and sandbox; Gatekeeper rejects both (no Developer ID); notarization not tested | | |
 | Gemini login (throwaway account) | **pending**: with the WKWebView hidden there is no toolbar to load Gemini; a start-up URL option is being added | not run | **worked** (Jason: "check 1 worked"; no further detail such as block text was reported) |
-| Trackpad scroll feel (Jason, real hardware) | not run | **smooth**; page-side: one 8.95 s gesture = 462 updates, 51.6/s, p95 gap 19 ms, worst 403 ms; the other six gestures (presumably the mouse-wheel ones; the page does not tag the input device) 6-22 updates/s with worst gaps 600-765 ms; **sideways shift still occurs with the mouse wheel** (cause not isolated) | not run |
+| Real-input scroll, **mouse and keyboard (no trackpad available)** (Jason) | not run | **smooth** overall; **sideways shift still occurs with the mouse wheel** (cause not isolated). Page-side log: one 8.95 s gesture = 462 updates, 51.6/s, p95 gap 19 ms, worst 403 ms; six other gestures 6-22 updates/s with worst gaps 600-765 ms. The page does not tag the input device, so which gesture was wheel, scrollbar drag or keyboard is not known | not run |
+| Trackpad scroll (inertia, phases) | **not tested: no trackpad on this Mac** | | |
 | Real-panel Retina | **not tested** (no Retina display; the virtual display is a compromise) | | |
 | IME / CJK input | not tested | | |
 
@@ -46,9 +47,12 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
 3. **Scroll is coarse in B and was not root-caused.** With the same input, native scrolling yields about 63 updates/s and B
    about 12/s (instant jumps, no smooth animation). Separately, host paints stall about 250-450 ms at the start of a scroll
    gesture and at direction changes (60 -> ~30-37 paints/s); this does not depend on wheel rate and is the same in the
-   software and GPU paths; presenting a frame takes 0.5-7 ms. Input above was synthetic wheel events. Jason's real-hardware run
-   (`b-sw-below`): trackpad scroll is smooth (one 462-update gesture, 51.6/s, worst gap 403 ms); the mouse wheel still shows
-   the sideways shift (Jason); the six coarse gestures in the log (6-22 updates/s, worst gaps 600-765 ms) are presumably it. Horizontal scroll deltas are not logged yet, so
+   software and GPU paths; presenting a frame takes 0.5-7 ms. Input above was synthetic wheel events. Jason's real-input run
+   (`b-sw-below`, mouse and keyboard; **there is no trackpad on this Mac, so trackpad scrolling is untested**): scrolling was
+   smooth overall (one 462-update gesture, 51.6/s, worst gap 403 ms) but the mouse wheel still shows the sideways shift
+   (Jason). The page does not record the input device, so the six coarse gestures in the log (6-22 updates/s, worst gaps
+   600-765 ms) cannot be attributed to the wheel with certainty. (The profile folder is named `trackpad-b-sw-below` only
+   because of the command I gave; it is not a trackpad run.) Horizontal scroll deltas are not logged yet, so
    whether the shift is a horizontal component of the wheel events is a guess, not a finding.
 4. **Key events through the host were wrong, and a fix was found.** Versus native input, the IPC path produced
    `event.key == "Unidentified"` for letters and Shift, **two keydowns per press, and no keyup**. Cause (by experiment): with
@@ -92,7 +96,7 @@ No OOM; swap was 0 before and about 17 MB after the session; peak memory was not
 ## Not verified / open
 - Gemini login in mode `a` with the WKWebView hidden (blocked until a start-up URL option exists); details of the
   `b-gpu-below` Gemini result beyond "worked".
-- Real Retina panel; notarization and Gatekeeper with a Developer ID; IME composition; mixed DPI; soak.
+- Trackpad scrolling (no trackpad on this Mac; production Macs have one); real Retina panel; notarization and Gatekeeper with a Developer ID; IME composition; mixed DPI; soak.
 - The Windows build was not rebuilt or run on this Mac after the shared-file edits.
 - Why the WKWebView blocks input to windowed CEF views in mode `a`; root cause of the scroll-start stall.
 - Commits on `mac-720`, local only, nothing pushed: `4e17d38` (spike), `3a5205c` (drawable-size log), `3e218e9` (key fix).
