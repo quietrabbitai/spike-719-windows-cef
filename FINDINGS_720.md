@@ -32,6 +32,8 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
 | Gemini login (throwaway account) | Gemini loaded in pane 1 through the new start-up URL option (logged). Jason: **"The login said account was recovered."**; Google then offered a passkey, and accepting it said the passkey is not on this device; **"Sign in another way" with password + 2FA worked** (no "browser not secure" block reported). Passkeys cannot work in this build (finding 7). Quitting this run **crashed** (finding 5) | not run | **worked** (Jason: "check 1 worked"; no further detail such as block text was reported) |
 | Real-input scroll, **mouse and keyboard (no trackpad available)** (Jason) | not run | Jason: scrolling the **whole page** was smooth (seemed smoother than before); the **list inside the pane** was smoother too but **still shows the line shift, the same with the mouse wheel and with keyboard scrolling** (cause not isolated). Page-side log: one 8.95 s gesture = 462 updates, 51.6/s, p95 gap 19 ms, worst 403 ms; six other gestures 6-22 updates/s with worst gaps 600-765 ms. The page does not tag the input device, so which gesture was wheel, scrollbar drag or keyboard is not known | not run |
 | Trackpad scroll (inertia, phases) | **not tested: no trackpad on this Mac** | | |
+| Line shift in the scrolling list: can it be reproduced? | **not reproduced**: screen captures after real wheel bursts and held-arrow keyboard scrolling with the WKWebView hidden show every line left-aligned | **not reproduced** in CEF's raw frames (273 frames, JS-driven and wheel-driven list scroll: every line's left edge is x=12, spread 0) and in screen captures (wheel bursts, held Down arrow, Page Down) | not dumped (GPU frames are not CPU-readable); Jason's report stands |
+| CPU of the whole process tree (60 fps two-pane repaint; ps cumulative CPU, % of one core; GPU load and power not measured) | not measured | **1x:** browser 27-29%, total 48-52% idle; scroll 44-45%. **virtual 2x:** browser **52-61%**, total 78-88% idle; scroll 58-65% | **1x:** browser 19-22%, total 40-43% idle; scroll 38-42%. **virtual 2x:** browser **25-28%**, total 48-53% idle; scroll 40-44% |
 | Real-panel Retina | **not tested** (no Retina display; the virtual display is a compromise) | | |
 | IME / CJK input | not tested | | |
 
@@ -54,9 +56,14 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    shows the line shift, **the same with the mouse wheel and with keyboard scrolling** (Jason). The page does not record the input device, so the six coarse gestures in the log (6-22 updates/s, worst gaps
    600-765 ms) cannot be attributed to the wheel with certainty. (The profile folder is named `trackpad-b-sw-below` only
    because of the command I gave; it is not a trackpad run.) Because keyboard scrolling (key events, no wheel events) shows the same
-   shift, a horizontal component of the wheel events is **not** the cause. Where the shift comes from (CEF's windowless
-   text rendering of the scrolling list, or how my Metal layer presents it) is not isolated; whether it also appears in
-   native mode `a` is untested.
+   shift, a horizontal component of the wheel events is **not** the cause. **Update, objective check (computer-controlled, this Mac):** I could not reproduce a
+   horizontal line shift anywhere. In `b-sw-below`, CEF's own raw frames (150 frames with the list scrolled from JavaScript,
+   123 with a wheel stream through the host; `tools/analyze_frames.py`) have every text line starting at exactly x=12 with
+   a spread of 0, so CEF's output has no shift on either path; screen captures after real wheel bursts, a held Down arrow and
+   Page Down in `b-sw-below` and in native mode `a` (WKWebView hidden) show every line left-aligned. What is visible is that
+   line ends vary (lines containing "111" or "211" end earlier than "110" or "212", because the digit 1 is narrower in this
+   font); whether that is what Jason perceives as a shift is a guess. His observation stands and is **not explained**; the
+   next step would be a screen recording of the scroll or a pointer to the exact lines that move.
 4. **Key events through the host were wrong, and a fix was found.** Versus native input, the IPC path produced
    `event.key == "Unidentified"` for letters and Shift, **two keydowns per press, and no keyup**. Cause (by experiment): with
    `character == 0`, CEF on macOS cannot derive `key` and turns a KEYUP into a keydown. Sending the character on both the
@@ -74,7 +81,7 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    (Cmd+Q), so **which key ended the run is unknown**, and saw an error; the log shows the quit path ran and ended without
    `cef::shutdown returned`, matching a crash dialog and a new report): same SIGTRAP signature, same sequence. So both of Jason's mode `a` quits crashed, while my own short
    mode `a` runs (10-20 s, local pages) exited cleanly; what differs (run length, page content, how it was quit) is not
-   isolated. Reports saved in `results/crash/check-run-20261106/` (local, gitignored); the crash count is now 18. The first runs also crashed from a class swap I made on a
+   isolated. Reports saved in `results/crash/check-run-20261106/` (local, gitignored); the crash count is now 18. A later menu quit of mode `a` with the WKWebView hidden (about 55 s, local pages, my run) was clean. The first runs also crashed from a class swap I made on a
    KVO-wrapped WKWebView (fixed).
 6. **Not a pane problem but needed:** the content view runs under the title bar, so the page's layout area is the window's
    `contentLayoutRect` (768 pt of 800), not the full content view. The first geometry used the full view and every pane click
@@ -85,6 +92,12 @@ The `above` placements, idle CPU/soak and mixed-DPI runs are outside the short s
    spike is ad-hoc signed with no entitlements and run as a bare executable. Jason saw this as "passkey is not on this
    device" after Google offered a passkey; password + 2FA worked. What a properly signed production build needs for
    passkeys is **not tested** here.
+8. **CPU: the GPU path is clearly cheaper at Retina.** Measured with `tools/measure_cpu.py` (whole process tree, two panes
+   repainting at 60 fps, two runs each, percent of one core): at 1x the browser process uses 27-29% in `b-sw-below` and
+   19-22% in `b-gpu-below`; on the virtual 2x display (4x the pixels) it uses 52-61% versus 25-28%, i.e. the software path
+   roughly doubles with the pixel count and the GPU path stays nearly flat (total tree 78-88% versus 48-53% idle). Limits:
+   a synthetic full-pane repaint workload, a virtual display, CPU only (GPU utilisation and power were not measured), two
+   runs per configuration. This overrides my earlier lean toward the software path as the starting point.
 
 ## Compromises found (each is a compromise, none worked around silently)
 1. `tauri/macos-private-api` + `macOSPrivateApi` for a transparent WKWebView: private API, a Mac App Store blocker (enabled
@@ -109,9 +122,9 @@ No OOM; swap was 0 before and about 17 MB after the session; peak memory was not
 ## Not verified / open
 - Gemini login: details beyond "worked" for `b-gpu-below`; whether the mode `a` crash depends on run length, page content or
   the quit method (unknown for Jason's runs: he tried several keys; in my runs the menu Quit and an app-driven exit were clean in the B modes, and Cmd+Q itself was never pressed by me); passkeys with a properly signed build.
+- The line shift Jason sees is not reproduced here (see finding 3); GPU-path frames were not inspected pixel-wise.
 - Trackpad scrolling (no trackpad on this Mac; production Macs have one); real Retina panel; notarization and Gatekeeper with a Developer ID; IME composition; mixed DPI; soak.
 - The Windows build was not rebuilt or run on this Mac after the shared-file edits.
 - Why the WKWebView blocks input to windowed CEF views in mode `a`; root cause of the scroll-start stall.
-- Commits on `mac-720`, local only, nothing pushed: `4e17d38` (spike), `3a5205c` (drawable-size log), `3e218e9` (key fix).
-  This note is committed separately (`2da039d`, correction `ffdc9bb`); the start-up URL option for mode `a` (`SPIKE720_PANE<i>_URL`)
-  is not yet in any commit.
+- Commits on `mac-720`, local only, nothing pushed: `4e17d38` (spike), `3a5205c` (drawable-size log), `3e218e9` (key fix),
+  `c9894ef` (start-up URL option), `786d39b` (frame-dump and CPU tooling), plus this note's own commits.
