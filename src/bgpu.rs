@@ -214,6 +214,8 @@ struct PaneSurf {
     popup_bind: Option<wgpu::BindGroup>,
     need_draw: bool,
     present_ms: Vec<f32>,
+    /// items.id=720 instrumentation: last drawable size logged.
+    last_drawable: (u32, u32),
 }
 
 /// macOS: surface for a plain NSView (wgpu installs a CAMetalLayer on it). Main thread only.
@@ -382,6 +384,10 @@ pub fn spawn(gpu: Arc<Gpu>, rx: Receiver<Cmd>, profile: PathBuf) {
                         }
                         _ => continue,
                     };
+                    if (st.texture.width(), st.texture.height()) != ps.last_drawable {
+                        ps.last_drawable = (st.texture.width(), st.texture.height());
+                        spikelog::event("drawable", &format!("slot={i} drawable={}x{} configured={}x{}", st.texture.width(), st.texture.height(), ps.cfg_size.0, ps.cfg_size.1));
+                    }
                     let view = st.texture.create_view(&wgpu::TextureViewDescriptor::default());
                     let mut enc = gpu
                         .device
