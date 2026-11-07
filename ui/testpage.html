@@ -48,6 +48,14 @@ const q = new URLSearchParams(location.search);
   document.addEventListener('focusin', (e) => rep('focusin=' + tgt(e)), true);
   let sc = 0; document.addEventListener('scroll', (e) => { if (sc++ % 20 === 0) rep('scroll=' + Math.round(window.scrollY) + '&target=' + tgt(e)); }, true);
   window.__rep = rep; }
+// items.id=720 diagnostics: what the page receives for every keydown (first 120): event.key, event.code, keyCode, which,
+// and the modifier flags. Reported to the loopback server (events.csv) so the host-side key mapping can be compared with
+// native CEF input (mode a with the WKWebView hidden is the reference).
+{ let n = 0; document.addEventListener('keydown', (e) => { if (n++ >= 120) return;
+  fetch('/selftest?pane=' + (q.get('pane') ?? '?') + '&keyinfo=' + encodeURIComponent('key=' + JSON.stringify(e.key) + ' code=' + e.code + ' keyCode=' + e.keyCode + ' which=' + e.which +
+    ' mods=' + (e.shiftKey ? 'S' : '') + (e.ctrlKey ? 'C' : '') + (e.altKey ? 'A' : '') + (e.metaKey ? 'M' : ''))).catch(() => {}); }, true); }
+{ let n = 0; document.addEventListener('keyup', (e) => { if (n++ >= 120) return;
+  fetch('/selftest?pane=' + (q.get('pane') ?? '?') + '&keyinfo=' + encodeURIComponent('UP key=' + JSON.stringify(e.key) + ' code=' + e.code + ' keyCode=' + e.keyCode)).catch(() => {}); }, true); }
 // items.id=720 diagnostics: scroll UPDATE gaps measured page-side, identical in every mode (including mode a, which has no
 // host paint log). A scroll "update" = a rAF tick at which window.scrollY + #scroll.scrollTop changed. Reported to the
 // loopback server 800 ms after the last update (a gesture = updates less than 1.5 s apart).

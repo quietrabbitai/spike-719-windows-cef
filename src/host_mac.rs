@@ -203,12 +203,42 @@ fn kvk(code: &str) -> i32 {
         "Tab" => 0x30, "Space" => 0x31, "Backquote" => 0x32, "Backspace" => 0x33, "Escape" => 0x35,
         "Delete" => 0x75, "Home" => 0x73, "End" => 0x77, "PageUp" => 0x74, "PageDown" => 0x79,
         "ArrowLeft" => 0x7B, "ArrowRight" => 0x7C, "ArrowDown" => 0x7D, "ArrowUp" => 0x7E,
+        "ShiftLeft" => 0x38, "ShiftRight" => 0x3C, "ControlLeft" => 0x3B, "ControlRight" => 0x3E, "AltLeft" => 0x3A,
+        "AltRight" => 0x3D, "MetaLeft" => 0x37, "MetaRight" => 0x36, "CapsLock" => 0x39,
         _ => 0,
     }
 }
 
+/// The `character` CEF needs on macOS for key down/up (NSEvent.characters). Found by experiment (items.id=720): with
+/// character 0, CEF on macOS reports event.key "Unidentified" for letters AND turns every KEYUP into an extra keydown (the
+/// page never sees a keyup). With the character on both the down and the up event the page gets one keydown (right key)
+/// and one keyup, as native input does. Function keys use NSEvent's private-use codes.
+fn key_character(key: &str) -> u16 {
+    let mut it = key.chars();
+    if let (Some(c), None) = (it.next(), it.next()) {
+        let mut b = [0u16; 2];
+        return c.encode_utf16(&mut b)[0];
+    }
+    match key {
+        "Enter" => 13,
+        "Tab" => 9,
+        "Escape" => 27,
+        "Backspace" => 0x7F,
+        "ArrowUp" => 0xF700,
+        "ArrowDown" => 0xF701,
+        "ArrowLeft" => 0xF702,
+        "ArrowRight" => 0xF703,
+        "Delete" => 0xF728,
+        "Home" => 0xF729,
+        "End" => 0xF72B,
+        "PageUp" => 0xF72C,
+        "PageDown" => 0xF72D,
+        _ => 0, // modifier keys and anything unmapped
+    }
+}
+
 #[tauri::command]
-fn fwd_key(slot: usize, kind: String, vk: i32, ch: u16, code: Option<String>, mods: DomMods) {
+fn fwd_key(slot: usize, kind: String, vk: i32, ch: u16, code: Option<String>, key: Option<String>, mods: DomMods) {
     // Cmd+C/X/V/A: a windowless browser gets no OS accelerators; Copy goes through the selection cache
     // (OnTextSelectionChanged), like Linux's items.id=369 path.
     if kind == "down" && mods.meta && !mods.alt {
@@ -228,9 +258,12 @@ fn fwd_key(slot: usize, kind: String, vk: i32, ch: u16, code: Option<String>, mo
         "down" => cef::KeyEventType::RAWKEYDOWN,
         "up" => cef::KeyEventType::KEYUP,
         "char" => cef::KeyEventType::CHAR,
+        "keydown" => cef::KeyEventType::KEYDOWN, // experiment only
         _ => return,
     };
     let native = kvk(code.as_deref().unwrap_or(""));
+    // down/up carry the key's character (see key_character); a char event keeps the character the page sent.
+    let ch = if kind == "char" { ch } else { key.as_deref().map(key_character).unwrap_or(ch) };
     crate::bcef::key(slot, k, vk, native, ch, cef_mods(&mods), false);
 }
 
@@ -426,9 +459,9 @@ pub fn run(cli: Cli) {
                         fwd_mouse_click(0, 60.0, 42.0, 0, true, 1, m);
                         for (ch, code) in [('h', "KeyH"), ('e', "KeyE"), ('l', "KeyL"), ('l', "KeyL"), ('o', "KeyO"), ('1', "Digit1")] {
                             let vk = ch.to_ascii_uppercase() as i32;
-                            fwd_key(0, "down".into(), vk, 0, Some(code.into()), m);
-                            fwd_key(0, "char".into(), ch as i32, ch as u16, Some(code.into()), m);
-                            fwd_key(0, "up".into(), vk, 0, Some(code.into()), m);
+                            fwd_key(0, "down".into(), vk, 0, Some(code.into()), Some(ch.to_string()), m);
+                            fwd_key(0, "char".into(), ch as i32, ch as u16, Some(code.into()), None, m);
+                            fwd_key(0, "up".into(), vk, 0, Some(code.into()), Some(ch.to_string()), m);
                         }
                     });
                     std::thread::sleep(Duration::from_millis(800));
@@ -437,6 +470,46 @@ pub fn run(cli: Cli) {
                         let js = "fetch('/selftest?first=' + encodeURIComponent(document.getElementById('first').value) + '&active=' + (document.activeElement && document.activeElement.id))";
                         f.execute_java_script(Some(&cef::CefString::from(js)), None, 0);
                     }
+                });
+            }
+            // Key-mapping experiment (b-* modes, SPIKE720_KEYTEST): for several keys, send different down/char/up combinations
+            // through fwd_key and mark each variant in events.csv; the test page logs every keydown it receives.
+            if windowless && std::env::var_os("SPIKE720_KEYTEST").is_some() {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(6));
+                    let m = DomMods::default();
+                    let send = |h: &tauri::AppHandle, f: Box<dyn FnOnce() + Send>| { let _ = h.run_on_main_thread(f); };
+                    send(&handle, Box::new(move || { fwd_focus(0, true); fwd_mouse_click(0, 60.0, 42.0, 0, false, 1, m); fwd_mouse_click(0, 60.0, 42.0, 0, true, 1, m); }));
+                    std::thread::sleep(Duration::from_millis(500));
+                    // (name, kind sequence, put the character on the down event?)
+                    let variants: [(&str, &[&str], bool); 3] = [
+                        ("down(ch)+up(ch)", &["down", "up"], true),
+                        ("up(ch)-only", &["up"], true),
+                        ("down(ch)+up(ch)+up(ch)", &["down", "up", "up"], true),
+                    ];
+                    let _unused: [(&str, &[&str], bool); 6] = [
+                        ("down", &["down"], false),
+                        ("down+up", &["down", "up"], false),
+                        ("down+char+up", &["down", "char", "up"], false),
+                        ("char", &["char"], false),
+                        ("down(ch)+up", &["down", "up"], true),
+                        ("down(ch)+char+up", &["down", "char", "up"], true),
+                    ];
+                    // (label, vk, ch, DOM code)
+                    let keys: [(&str, i32, u16, &str); 3] = [("a", 65, 'a' as u16, "KeyA"), ("Enter", 13, 13, "Enter"), ("ArrowLeft", 37, 0xF702, "ArrowLeft")];
+                    for (vname, kinds, ch_on_down) in variants {
+                        for (label, vk, ch, code) in keys {
+                            spikelog::event("keytest", &format!("variant={vname} key={label}"));
+                            for kind in kinds {
+                                let (kind, ch_arg) = (kind.to_string(), if *kind == "down" && !ch_on_down { 0u16 } else { ch });
+                                send(&handle, Box::new(move || fwd_key(0, kind, vk, ch_arg, Some(code.into()), None, DomMods::default())));
+                                std::thread::sleep(Duration::from_millis(40));
+                            }
+                            std::thread::sleep(Duration::from_millis(250));
+                        }
+                    }
+                    spikelog::event("keytest", "done");
                 });
             }
             // Self-test of scroll smoothness (b-* modes, SPIKE720_SELFTEST): a controlled wheel stream at 120 Hz into

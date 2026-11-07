@@ -172,11 +172,11 @@ function makeHit(host, slot) {
   ta.addEventListener('keydown', (e) => {
     if (e.isComposing || e.keyCode === 229) return; // the IME owns this key
     e.preventDefault();
-    invoke('fwd_key', { slot, kind: 'down', vk: e.keyCode, ch: 0, code: e.code, mods: mods(e, 0) });
+    invoke('fwd_key', { slot, kind: 'down', vk: e.keyCode, ch: 0, code: e.code, key: e.key, mods: mods(e, 0) });
     if (e.key === 'Enter') invoke('fwd_key', { slot, kind: 'char', vk: 13, ch: 13, code: e.code, mods: mods(e, 0) });
     else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) invoke('fwd_key', { slot, kind: 'char', vk: e.key.charCodeAt(0), ch: e.key.charCodeAt(0), code: e.code, mods: mods(e, 0) });
   });
-  ta.addEventListener('keyup', (e) => { if (!e.isComposing && e.keyCode !== 229) invoke('fwd_key', { slot, kind: 'up', vk: e.keyCode, ch: 0, code: e.code, mods: mods(e, 0) }); });
+  ta.addEventListener('keyup', (e) => { if (!e.isComposing && e.keyCode !== 229) invoke('fwd_key', { slot, kind: 'up', vk: e.keyCode, ch: 0, code: e.code, key: e.key, mods: mods(e, 0) }); });
   ta.addEventListener('compositionupdate', (e) => invoke('fwd_ime', { slot, kind: 'update', text: e.data || '' }));
   ta.addEventListener('compositionend', (e) => { invoke('fwd_ime', { slot, kind: 'commit', text: e.data || '' }); ta.value = ''; });
   return hit;
